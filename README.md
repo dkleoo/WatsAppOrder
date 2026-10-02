@@ -1,0 +1,113 @@
+This is a Kotlin Multiplatform project targeting Server.
+
+* [/server](./server/src/main/kotlin) is for the Ktor server application.
+
+### Running the apps
+
+Use the run configurations provided by the run widget in your IDE's toolbar. You can also use these commands and
+options:
+
+- Server: `./gradlew :server:run`
+
+---
+
+## Authentication endpoints
+
+All responses are JSON. Protected endpoints expect `Authorization: Bearer <token>`.
+
+| Method | Path             | Auth | Body                                              |
+|--------|------------------|------|---------------------------------------------------|
+| POST   | `/auth/register` | No   | `{ "email": "...", "password": "...", "name": "..." }` |
+| POST   | `/auth/login`    | No   | `{ "email": "...", "password": "..." }`           |
+| POST   | `/auth/federated`| No   | `{ "idToken": "<firebase-id-token>", "provider": "GOOGLE", "name": "..." }` |
+| GET    | `/auth/me`       | Yes  | -                                                 |
+
+Successful register/login response:
+
+```json
+{
+  "token": "<jwt>",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "user": { "id": 1, "email": "user@example.com", "name": "User" }
+}
+```
+
+Errors return `{ "error": "<code>" }` with codes: `invalid_email`, `invalid_password`, `invalid_name`,
+`email_already_registered`, `invalid_credentials`, `invalid_request`, `invalid_token`, `unauthorized`,
+`user_not_found`, `internal_error`.
+
+### Federated authentication
+
+`POST /auth/federated` exchanges a Firebase ID token for a backend JWT. The server verifies the token
+signature against Google's public x509 certificates, then checks the `aud` (must equal `FIREBASE_PROJECT_ID`),
+the `iss` (`https://securetoken.google.com/<FIREBASE_PROJECT_ID>`) and the expiration.
+
+- `idToken` is required; `provider` (`GOOGLE` | `PHONE` | `EMAIL`) and `name` are optional.
+- The user is looked up by `firebase_uid` (Firebase `sub`), then by verified email. If it does not exist it is
+  created automatically. The call is idempotent: logging in twice returns the same user.
+- A federated user has no usable password (an unusable sentinel hash is stored), so it cannot authenticate
+  through `/auth/login`.
+- Invalid or expired tokens return `401 {"error":"invalid_token"}`; missing fields return
+  `400 {"error":"invalid_request"}`.
+
+```sh
+curl -X POST http://localhost:8080/auth/federated \
+  -H "Content-Type: application/json" \
+  -d '{"idToken":"<firebase-id-token>","provider":"GOOGLE","name":"User"}'
+```
+
+### Environment variables
+
+| Variable                 | Default                                        |
+|--------------------------|------------------------------------------------|
+| `DATABASE_URL`           | - (required; JDBC or `postgresql://`)          |
+| `DATABASE_USER`          | - (required)                                   |
+| `DATABASE_PASSWORD`      | - (required)                                   |
+| `DATABASE_MAX_POOL_SIZE` | `5`                                            |
+| `JWT_SECRET`             | development default (change in production)     |
+| `JWT_ISSUER`             | `watsapp-order`                                |
+| `JWT_AUDIENCE`           | `watsapp-order-clients`                        |
+| `JWT_REALM`              | `watsapp-order`                                |
+| `JWT_EXPIRATION_MINUTES` | `60`                                           |
+| `FIREBASE_PROJECT_ID`    | - (required for `/auth/federated`)             |
+| `HOST` / `PORT`          | from `application.conf` (`ktor.deployment`)    |
+
+Database credentials are read **only** from environment variables; `application.conf` no longer contains a URL, user, or password.
+
+Set the variables in the environment where the app runs: the service environment on Render (see `render.yaml`) or exported locally.
+
+`DATABASE_URL` accepts either a JDBC URL (`jdbc:postgresql://...`) or a Render-style connection string (`postgresql://user:password@host/database`). The latter is converted to JDBC automatically and SSL is enabled for non-local hosts.
+
+- Running on Render: use the **Internal Database URL** (internal hostname, only resolves inside Render).
+- Running locally: use the **External Database URL** (host includes the domain, e.g. `...oregon-postgres.render.com`, plus `?sslmode=require`). The internal hostname does **not** resolve outside Render.
+
+### Local database
+
+```sh
+docker compose up -d
+export DATABASE_URL=jdbc:postgresql://localhost:5432/watsapporder
+export DATABASE_USER=postgres
+export DATABASE_PASSWORD=postgres
+export JWT_SECRET=local-development-secret
+./gradlew :server:run
+```
+
+### Example
+
+```sh
+curl -X POST http://localhost:8080/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"secret123","name":"User"}'
+
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"secret123"}'
+
+curl http://localhost:8080/auth/me -H "Authorization: Bearer <token>"
+```
+
+---
+
+Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html)…
+# WatsAppOrder
