@@ -6,7 +6,6 @@ import com.example.watsapporderservices.data.database.product.Products
 import com.example.watsapporderservices.data.database.session.Sessions
 import com.example.watsapporderservices.data.database.step.StepInputs
 import com.example.watsapporderservices.data.database.step.Steps
-import com.example.watsapporderservices.data.database.store.StoreProducts
 import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.database.user.AUTH_PROVIDER_MAX_LENGTH
 import com.example.watsapporderservices.data.database.user.FIREBASE_UID_MAX_LENGTH
@@ -40,22 +39,10 @@ object DatabaseFactory {
                 Inputs,
                 StepInputs,
                 Stores,
-                StoreProducts,
                 Orders,
                 Sessions,
             )
-            migrateUsers()
         }
     }
 
-    /**
-     * Adds the federation columns to a pre-existing `users` table. `SchemaUtils.create` only creates
-     * missing tables, so databases created before the federated auth feature need an explicit migration.
-     */
-    private fun JdbcTransaction.migrateUsers() {
-        exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR($FIREBASE_UID_MAX_LENGTH)")
-        exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR($AUTH_PROVIDER_MAX_LENGTH)")
-        exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS store_id INT")
-        exec("CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique ON users (firebase_uid)")
-    }
 }

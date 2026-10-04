@@ -33,6 +33,7 @@ data class ProductResponse(
     val cost: Double,
     val quantity: Int,
     val type: ProductType,
+    val storeId: Int? = null,
     val steps: List<StepResponse> = emptyList(),
 )
 
@@ -55,6 +56,7 @@ fun ProductEntity.toResponse(
     cost = cost.toDouble(),
     quantity = quantity,
     type = type,
+    storeId = storeId,
     steps = steps.map { it.toResponse(inputsByStep[it.id].orEmpty()) },
 )
 

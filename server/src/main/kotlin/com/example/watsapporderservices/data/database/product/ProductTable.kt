@@ -11,6 +11,7 @@ const val MONEY_SCALE = 2
 
 object Products : Table("products") {
     val id = integer("id").autoIncrement()
+    val storeId = integer("store_id").nullable()
     val name = varchar("name", PRODUCT_NAME_MAX_LENGTH)
     val price = decimal("price", MONEY_PRECISION, MONEY_SCALE)
     val cost = decimal("cost", MONEY_PRECISION, MONEY_SCALE)
@@ -22,6 +23,7 @@ object Products : Table("products") {
 
 data class ProductEntity(
     val id: Int,
+    val storeId: Int?,
     val name: String,
     val price: BigDecimal,
     val cost: BigDecimal,

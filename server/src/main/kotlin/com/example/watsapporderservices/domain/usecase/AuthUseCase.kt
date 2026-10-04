@@ -14,4 +14,6 @@ class AuthUseCase(private val repository: AuthRepository) {
     suspend fun federated(request: FederatedAuthRequest): AuthResult = repository.federated(request)
 
     suspend fun profile(userId: Int): UserResponse? = repository.profile(userId)
+
+    suspend fun refresh(userId: Int): AuthResult = repository.refresh(userId)
 }

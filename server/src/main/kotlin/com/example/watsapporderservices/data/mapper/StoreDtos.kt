@@ -11,8 +11,6 @@ data class StoreRequest(
     val phone: String? = null,
     val whatsappBusinessPhone: String? = null,
     val idWhatsApp: String? = null,
-    /** Products of this store. On create/update, when present, it replaces the store's product links. */
-    val productIds: List<Int>? = null,
 )
 
 @Serializable
@@ -23,17 +21,15 @@ data class StoreResponse(
     val phone: String,
     val whatsappBusinessPhone: String,
     val idWhatsApp: String,
-    val productIds: List<Int> = emptyList(),
 )
 
-fun StoreEntity.toResponse(productIds: List<Int> = emptyList()): StoreResponse = StoreResponse(
+fun StoreEntity.toResponse(): StoreResponse = StoreResponse(
     id = id,
     welcomeMessage = welcomeMessage,
     address = address,
     phone = phone,
     whatsappBusinessPhone = whatsappBusinessPhone,
     idWhatsApp = idWhatsApp,
-    productIds = productIds,
 )
 
 fun StoreErrorCode.toResponse(): ErrorResponse = ErrorResponse(code)

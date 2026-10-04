@@ -9,7 +9,6 @@ import com.example.watsapporderservices.data.database.step.StepEntity
 import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.StoreEntity
-import com.example.watsapporderservices.data.database.store.StoreProductDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.enum.ProductErrorCode
 import com.example.watsapporderservices.data.enum.ProductType
@@ -43,15 +42,12 @@ class ProductRepositoryImpl(
     private val stepInputDao: StepInputDao,
     private val inputDao: InputDao,
     private val storeDao: StoreDao,
-    private val storeProductDao: StoreProductDao,
     private val userDao: UserDao,
 ) : ProductRepository {
-    override suspend fun getProducts(): List<ProductResponse> = withContext(Dispatchers.IO) {
+    override suspend fun getProducts(userId: Int): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
-            val products = productDao.findAll()
-            val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
-            val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
-            products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
+            val storeId = userDao.findById(userId)?.storeId ?: return@transaction emptyList()
+            toResponses(productDao.findByStoreId(storeId))
         }
     }
 
@@ -70,16 +66,77 @@ class ProductRepositoryImpl(
     ): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
             val store = findStore(whatsappBusinessPhone, idWhatsApp)
-            // If there is no store, or the store has no linked products, fall back to the full catalog.
+            // If there is no store, or the store has no products, fall back to the full catalog.
             val candidates = store
                 ?.let { productDao.findByStoreId(it.id) }
                 ?.takeIf { it.isNotEmpty() }
                 ?: productDao.findAll()
-            val products = matchProducts(candidates, query)
-            val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
-            val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
-            products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
+            toResponses(matchProducts(candidates, query))
         }
+    }
+
+    override suspend fun saveProduct(userId: Int, request: ProductRequest): ProductResult =
+        withContext(Dispatchers.IO) {
+            transaction {
+                val price = BigDecimal.valueOf(request.price)
+                val cost = BigDecimal.valueOf(request.cost)
+                val product = if (request.id == null) {
+                    // The store is not sent by the client: it comes from the authenticated user.
+                    val storeId = userDao.findById(userId)?.storeId
+                        ?: return@transaction ProductResult.Invalid(ProductErrorCode.STORE_NOT_CONFIGURED)
+                    if (storeDao.findById(storeId) == null) return@transaction ProductResult.StoreNotFound
+                    productDao.insert(storeId, request.name, price, cost, request.quantity, request.type)
+                } else {
+                    val existing = productDao.findById(request.id)
+                        ?: return@transaction ProductResult.ProductNotFound
+                    productDao.update(request.id, request.name, price, cost, request.quantity, request.type)
+                    existing.copy(
+                        name = request.name,
+                        price = price,
+                        cost = cost,
+                        quantity = request.quantity,
+                        type = request.type,
+                    )
+                }
+                val saved = replaceSteps(product.id, request.type, request.steps)
+                ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
+            }
+        }
+
+    override suspend fun updateProduct(id: Int, request: ProductRequest): ProductResult =
+        withContext(Dispatchers.IO) {
+            transaction {
+                val price = BigDecimal.valueOf(request.price)
+                val cost = BigDecimal.valueOf(request.cost)
+                val existing = productDao.findById(id) ?: return@transaction ProductResult.ProductNotFound
+                productDao.update(id, request.name, price, cost, request.quantity, request.type)
+                val product = existing.copy(
+                    name = request.name,
+                    price = price,
+                    cost = cost,
+                    quantity = request.quantity,
+                    type = request.type,
+                )
+                val saved = replaceSteps(id, request.type, request.steps)
+                ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
+            }
+        }
+
+    override suspend fun deleteProduct(id: Int): Boolean = withContext(Dispatchers.IO) {
+        transaction {
+            if (productDao.findById(id) == null) return@transaction false
+            val stepIds = stepDao.findByProductId(id).map { it.id }
+            stepInputDao.deleteByStepIds(stepIds)
+            stepDao.deleteByProductId(id)
+            productDao.deleteById(id)
+            true
+        }
+    }
+
+    private fun toResponses(products: List<ProductEntity>): List<ProductResponse> {
+        val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
+        val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
+        return products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
     }
 
     /**
@@ -117,63 +174,14 @@ class ProductRepositoryImpl(
             .replace(NON_ALPHANUMERIC_REGEX, " ")
             .trim()
 
-    override suspend fun saveProduct(userId: Int, request: ProductRequest): ProductResult =
-        withContext(Dispatchers.IO) {
-            transaction {
-                val price = BigDecimal.valueOf(request.price)
-                val cost = BigDecimal.valueOf(request.cost)
-                val product = if (request.id == null) {
-                    // The store is not sent by the client: it comes from the authenticated user.
-                    val storeId = userDao.findById(userId)?.storeId
-                        ?: return@transaction ProductResult.Invalid(ProductErrorCode.STORE_NOT_CONFIGURED)
-                    if (storeDao.findById(storeId) == null) return@transaction ProductResult.StoreNotFound
-                    val created = productDao.insert(request.name, price, cost, request.quantity, request.type)
-                    // Products must always belong to a store.
-                    storeProductDao.link(storeId, created.id)
-                    created
-                } else {
-                    val updated =
-                        productDao.update(request.id, request.name, price, cost, request.quantity, request.type)
-                    if (updated == 0) return@transaction ProductResult.ProductNotFound
-                    ProductEntity(request.id, request.name, price, cost, request.quantity, request.type)
-                }
-                val saved = replaceSteps(product.id, request.type, request.steps)
-                ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
-            }
-        }
-
-    override suspend fun updateProduct(id: Int, request: ProductRequest): ProductResult =
-        withContext(Dispatchers.IO) {
-            transaction {
-                val price = BigDecimal.valueOf(request.price)
-                val cost = BigDecimal.valueOf(request.cost)
-                val updated = productDao.update(id, request.name, price, cost, request.quantity, request.type)
-                if (updated == 0) return@transaction ProductResult.ProductNotFound
-                val product = ProductEntity(id, request.name, price, cost, request.quantity, request.type)
-                val saved = replaceSteps(id, request.type, request.steps)
-                ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
-            }
-        }
-
-    override suspend fun deleteProduct(id: Int): Boolean = withContext(Dispatchers.IO) {
-        transaction {
-            if (productDao.findById(id) == null) return@transaction false
-            val stepIds = stepDao.findByProductId(id).map { it.id }
-            stepInputDao.deleteByStepIds(stepIds)
-            stepDao.deleteByProductId(id)
-            storeProductDao.deleteByProductId(id)
-            productDao.deleteById(id)
-            true
-        }
-    }
-
     private fun findStore(whatsappBusinessPhone: String?, idWhatsApp: String?): StoreEntity? {
         val phoneDigits = whatsappBusinessPhone?.filter { it.isDigit() }?.takeIf { it.isNotBlank() }
         if (phoneDigits != null) storeDao.findByWhatsappBusinessPhone(phoneDigits)?.let { return it }
         return idWhatsApp?.takeIf { it.isNotBlank() }?.let { storeDao.findByIdWhatsApp(it) }
     }
 
-    private fun resolveInputsByStep(stepIds: List<Int>): Map<Int, List<InputEntity>> {        val links = stepInputDao.findByStepIds(stepIds)
+    private fun resolveInputsByStep(stepIds: List<Int>): Map<Int, List<InputEntity>> {
+        val links = stepInputDao.findByStepIds(stepIds)
         val inputsById = inputDao.findByIds(links.map { it.inputId }.distinct()).associateBy { it.id }
         return links.groupBy { it.stepId }
             .mapValues { (_, stepLinks) -> stepLinks.mapNotNull { inputsById[it.inputId] } }

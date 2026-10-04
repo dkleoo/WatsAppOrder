@@ -21,8 +21,15 @@ import io.ktor.server.routing.route
 
 fun Route.productRoutes(useCase: ProductUseCase) {
     route("/products") {
-        get {
-            call.respond(useCase.getProducts())
+        authenticate(JWT_AUTH_NAME) {
+            get {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@get
+                }
+                call.respond(useCase.getProducts(userId))
+            }
         }
 
         get("/catalog") {

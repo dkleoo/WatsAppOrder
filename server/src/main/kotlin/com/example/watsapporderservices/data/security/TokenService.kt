@@ -8,6 +8,7 @@ import java.util.Date
 const val JWT_AUTH_NAME = "auth-jwt"
 const val USER_ID_CLAIM = "userId"
 const val EMAIL_CLAIM = "email"
+const val STORE_ID_CLAIM = "storeId"
 const val TOKEN_TYPE = "Bearer"
 
 class TokenService(private val config: JwtConfig) {
@@ -22,14 +23,17 @@ class TokenService(private val config: JwtConfig) {
 
     val expirationSeconds: Long get() = config.expirationMinutes * 60
 
-    fun issue(userId: Int, email: String): String = JWT.create()
-        .withIssuer(config.issuer)
-        .withAudience(config.audience)
-        .withClaim(USER_ID_CLAIM, userId.toLong())
-        .withClaim(EMAIL_CLAIM, email)
-        .withIssuedAt(Date())
-        .withExpiresAt(Date(System.currentTimeMillis() + config.expirationMillis))
-        .sign(algorithm)
+    fun issue(userId: Int, email: String, storeId: Int? = null): String {
+        val builder = JWT.create()
+            .withIssuer(config.issuer)
+            .withAudience(config.audience)
+            .withClaim(USER_ID_CLAIM, userId.toLong())
+            .withClaim(EMAIL_CLAIM, email)
+            .withIssuedAt(Date())
+            .withExpiresAt(Date(System.currentTimeMillis() + config.expirationMillis))
+        storeId?.let { builder.withClaim(STORE_ID_CLAIM, it.toLong()) }
+        return builder.sign(algorithm)
+    }
 
     fun verifier(): JWTVerifier = verifier
 }

@@ -5,7 +5,8 @@ import com.example.watsapporderservices.data.mapper.ProductResponse
 import com.example.watsapporderservices.domain.usecase.ProductResult
 
 interface ProductRepository {
-    suspend fun getProducts(): List<ProductResponse>
+    /** Products of the authenticated user's store. */
+    suspend fun getProducts(userId: Int): List<ProductResponse>
 
     suspend fun getProduct(id: Int): ProductResponse?
 

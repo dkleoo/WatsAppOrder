@@ -54,6 +54,15 @@ fun Route.authRoutes(useCase: AuthUseCase) {
                 }
                 call.respond(user)
             }
+
+            post("/refresh") {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@post
+                }
+                respondAuth(call, useCase.refresh(userId))
+            }
         }
     }
 }

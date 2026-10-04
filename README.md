@@ -21,6 +21,7 @@ All responses are JSON. Protected endpoints expect `Authorization: Bearer <token
 | POST   | `/auth/login`    | No   | `{ "email": "...", "password": "..." }`           |
 | POST   | `/auth/federated`| No   | `{ "idToken": "<firebase-id-token>", "provider": "GOOGLE", "name": "..." }` |
 | GET    | `/auth/me`       | Yes  | -                                                 |
+| POST   | `/auth/refresh`  | Yes  | -                                                 |
 
 Successful register/login response:
 
@@ -29,9 +30,13 @@ Successful register/login response:
   "token": "<jwt>",
   "tokenType": "Bearer",
   "expiresIn": 3600,
-  "user": { "id": 1, "email": "user@example.com", "name": "User" }
+  "user": { "id": 1, "email": "user@example.com", "name": "User", "storeId": 1 }
 }
 ```
+
+The backend JWT includes the `storeId` claim (when the user has a store), so the client does not need to call
+`/auth/me`. If the store is created after logging in, call `POST /auth/refresh` (with the token) to get a fresh
+token that includes the new `storeId`.
 
 Errors return `{ "error": "<code>" }` with codes: `invalid_email`, `invalid_password`, `invalid_name`,
 `email_already_registered`, `invalid_credentials`, `invalid_request`, `invalid_token`, `unauthorized`,
@@ -139,33 +144,36 @@ The `stores` table holds the per-store configuration: `id`, `welcome_message`, `
 `whatsapp_business_phone` (the `display_phone_number` Meta sends in the webhook) and `id_whatsapp`
 (the `phone_number_id`).
 
-Products are related to a store through the `store_products` table (`store_id`, `product_id`); this avoids
-altering the existing `products` table (no migration yet).
+Products store the store they belong to in `products.store_id` (no pivot table). The store is taken from the
+authenticated user, so it is never sent by the client.
 
 Store endpoints:
 
 | Method | Path           | Body |
 |--------|----------------|------|
-| POST   | `/stores`      | `{ "welcomeMessage": "...", "address": "...", "phone": "...", "whatsappBusinessPhone": "573138427026", "idWhatsApp": "1379699841884103", "productIds": [1, 2] }` |
+| POST   | `/stores`      | `{ "welcomeMessage": "...", "address": "...", "phone": "...", "whatsappBusinessPhone": "573138427026", "idWhatsApp": "1379699841884103" }` |
 | GET    | `/stores`      | - |
 | GET    | `/stores/{id}` | - |
-| PUT    | `/stores/{id}` | same body as POST (`productIds` optional; when present it replaces the store's products) |
+| PUT    | `/stores/{id}` | same body as POST |
 
 `whatsappBusinessPhone` is stored as digits (so it matches the webhook's `display_phone_number`).
-`productIds` links the given products to the store (the `store_products` table).
 Creating a store (`POST /stores`) requires `Authorization: Bearer <jwt>` and links the store to the authenticated
 user. Creating a store with an existing `whatsappBusinessPhone` or `idWhatsApp` returns `409 store_already_exists`.
 
 ```sh
 curl -X POST http://localhost:8080/stores \
+  -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"welcomeMessage":"¡Hola! Bienvenido a mi tienda","address":"Calle 1 #2-3","phone":"+57 300 0000000","whatsappBusinessPhone":"573138427026","idWhatsApp":"1379699841884103","productIds":[1,2]}'
+  -d '{"welcomeMessage":"¡Hola! Bienvenido a mi tienda","address":"Calle 1 #2-3","phone":"+57 300 0000000","whatsappBusinessPhone":"573138427026","idWhatsApp":"1379699841884103"}'
 
 curl http://localhost:8080/stores
 ```
 
-`GET /products/catalog` returns the store's full catalog (all its products). If the store is not identified or has
-no linked products, it falls back to **all products**, so the client always sees something.
+`GET /products` is authenticated and returns **only the products of the authenticated user's store** (the `WHERE`
+uses `products.store_id`).
+
+`GET /products/catalog` (public) returns the store's full catalog, looked up by the WhatsApp number. If the store
+is not identified or has no products, it falls back to **all products**.
 
 `GET /products/filter` returns the products of a store, looked up by its WhatsApp number, optionally filtered
 by name. The name filter is lenient: the query is split into significant words (ignoring articles like "una",
@@ -186,8 +194,8 @@ is more than one match.
 ### Creating products
 
 The store is **not sent by the client**: `POST /products` requires the `Authorization: Bearer <jwt>` token and
-uses the store linked to the authenticated user (set when the user creates their store). The product is always
-linked to that store in `store_products`.
+uses the store linked to the authenticated user (set when the user creates their store), storing it in
+`products.store_id`.
 
 - No token → `401 unauthorized`.
 - The user has no store → `400 store_not_configured`.

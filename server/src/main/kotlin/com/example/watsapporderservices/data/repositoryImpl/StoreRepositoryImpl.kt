@@ -2,7 +2,6 @@ package com.example.watsapporderservices.data.repositoryImpl
 
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.StoreEntity
-import com.example.watsapporderservices.data.database.store.StoreProductDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.enum.StoreErrorCode
 import com.example.watsapporderservices.data.mapper.StoreRequest
@@ -15,7 +14,6 @@ import kotlinx.coroutines.withContext
 
 class StoreRepositoryImpl(
     private val storeDao: StoreDao,
-    private val storeProductDao: StoreProductDao,
     private val userDao: UserDao,
 ) : StoreRepository {
     override suspend fun findByWhatsapp(
@@ -25,15 +23,15 @@ class StoreRepositoryImpl(
         val phoneDigits = whatsappBusinessPhone?.filter { it.isDigit() }?.takeIf { it.isNotBlank() }
         val store = phoneDigits?.let { storeDao.findByWhatsappBusinessPhone(it) }
             ?: idWhatsApp?.takeIf { it.isNotBlank() }?.let { storeDao.findByIdWhatsApp(it) }
-        store?.let { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
+        store?.toResponse()
     }
 
     override suspend fun getStores(): List<StoreResponse> = withContext(Dispatchers.IO) {
-        storeDao.findAll().map { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
+        storeDao.findAll().map { it.toResponse() }
     }
 
     override suspend fun getStore(id: Int): StoreResponse? = withContext(Dispatchers.IO) {
-        storeDao.findById(id)?.let { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
+        storeDao.findById(id)?.toResponse()
     }
 
     override suspend fun create(userId: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
@@ -52,10 +50,9 @@ class StoreRepositoryImpl(
             whatsappBusinessPhone = store.whatsappBusinessPhone,
             idWhatsApp = store.idWhatsApp,
         )
-        request.productIds?.let { storeProductDao.replace(created.id, it) }
         // The authenticated user's active store is this one.
         userDao.updateStoreId(userId, created.id)
-        StoreResult.Success(created.toResponse(storeProductDao.productIdsByStoreId(created.id)))
+        StoreResult.Success(created.toResponse())
     }
 
     override suspend fun update(id: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
@@ -78,10 +75,7 @@ class StoreRepositoryImpl(
             whatsappBusinessPhone = store.whatsappBusinessPhone,
             idWhatsApp = store.idWhatsApp,
         )
-        request.productIds?.let { storeProductDao.replace(id, it) }
-        StoreResult.Success(
-            store.copy(id = id).toResponse(storeProductDao.productIdsByStoreId(id)),
-        )
+        StoreResult.Success(store.copy(id = id).toResponse())
     }
 
     private fun parse(request: StoreRequest): Parsed {

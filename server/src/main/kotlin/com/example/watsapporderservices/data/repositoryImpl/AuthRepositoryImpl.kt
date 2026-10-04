@@ -107,8 +107,14 @@ class AuthRepositoryImpl(
     override suspend fun profile(userId: Int): UserResponse? =
         withContext(Dispatchers.IO) { userDao.findById(userId)?.toResponse() }
 
+    override suspend fun refresh(userId: Int): AuthResult {
+        val user = withContext(Dispatchers.IO) { userDao.findById(userId) }
+            ?: return AuthResult.InvalidCredentials
+        return success(user.id, user.email, user.toResponse())
+    }
+
     private fun success(userId: Int, email: String, user: UserResponse): AuthResult.Success =
-        AuthResult.Success(tokenService.issue(userId, email), tokenService.expirationSeconds, user)
+        AuthResult.Success(tokenService.issue(userId, email, user.storeId), tokenService.expirationSeconds, user)
 
     private fun syntheticEmail(claims: FirebaseUserClaims): String {
         val localPart = claims.phoneNumber

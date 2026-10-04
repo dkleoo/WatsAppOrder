@@ -14,4 +14,6 @@ interface AuthRepository {
     suspend fun federated(request: FederatedAuthRequest): AuthResult
 
     suspend fun profile(userId: Int): UserResponse?
+
+    suspend fun refresh(userId: Int): AuthResult
 }

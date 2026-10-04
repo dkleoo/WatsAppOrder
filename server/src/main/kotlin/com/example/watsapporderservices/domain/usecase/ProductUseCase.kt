@@ -5,7 +5,7 @@ import com.example.watsapporderservices.data.mapper.ProductResponse
 import com.example.watsapporderservices.domain.repository.ProductRepository
 
 class ProductUseCase(private val repository: ProductRepository) {
-    suspend fun getProducts(): List<ProductResponse> = repository.getProducts()
+    suspend fun getProducts(userId: Int): List<ProductResponse> = repository.getProducts(userId)
 
     suspend fun getProduct(id: Int): ProductResponse? = repository.getProduct(id)
 
