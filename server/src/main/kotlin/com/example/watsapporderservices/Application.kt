@@ -4,11 +4,13 @@ import com.example.watsapporderservices.data.database.DatabaseConfig
 import com.example.watsapporderservices.data.database.DatabaseFactory
 import com.example.watsapporderservices.data.repositoryImpl.AuthRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.InputRepositoryImpl
+import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImpl
 import com.example.watsapporderservices.data.security.FirebaseConfig
 import com.example.watsapporderservices.data.security.FirebaseTokenVerifier
 import com.example.watsapporderservices.data.security.JwtConfig
 import com.example.watsapporderservices.data.security.PasswordHasher
 import com.example.watsapporderservices.data.security.TokenService
+import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.data.database.input.InputDao
 import com.example.watsapporderservices.data.database.product.ProductDao
 import com.example.watsapporderservices.data.database.step.StepDao
@@ -18,12 +20,14 @@ import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImp
 import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
+import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import com.example.watsapporderservices.plugins.configureSecurity
 import com.example.watsapporderservices.plugins.configureSerialization
 import com.example.watsapporderservices.plugins.configureStatusPages
 import com.example.watsapporderservices.routes.authRoutes
 import com.example.watsapporderservices.routes.inputRoutes
 import com.example.watsapporderservices.routes.productRoutes
+import com.example.watsapporderservices.routes.webhookRoutes
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
 import io.ktor.server.application.log
@@ -50,6 +54,7 @@ fun Application.module() {
         FirebaseTokenVerifier(firebaseConfig.projectId),
     )
     val authUseCase = AuthUseCase(authRepository)
+    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(WhatsAppConfig.from(environment.config, System.getenv())))
     val productUseCase = ProductUseCase(ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao()))
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
@@ -57,6 +62,7 @@ fun Application.module() {
     configureSecurity(tokenService)
     routing {
         authRoutes(authUseCase)
+        webhookRoutes(webhookUseCase)
         productRoutes(productUseCase)
         inputRoutes(inputUseCase)
     }

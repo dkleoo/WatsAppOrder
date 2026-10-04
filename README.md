@@ -57,6 +57,21 @@ curl -X POST http://localhost:8080/auth/federated \
   -d '{"idToken":"<firebase-id-token>","provider":"GOOGLE","name":"User"}'
 ```
 
+### WhatsApp webhook
+
+`GET /webhook` implements Meta's webhook verification handshake. Meta sends `hub.mode=subscribe`,
+`hub.verify_token` and `hub.challenge` as query parameters. If the mode is `subscribe` and the token matches
+`WHATSAPP_VERIFY_TOKEN`, the server responds `200` with the raw challenge (text/plain); otherwise it responds
+`403 Forbidden`.
+
+Set the callback URL in the Meta app dashboard to `https://<your-public-host>/webhook` and use the same token
+as `WHATSAPP_VERIFY_TOKEN`.
+
+```sh
+curl "http://localhost:8080/webhook?hub.mode=subscribe&hub.verify_token=orderwhatsapp_verify&hub.challenge=123456"
+# -> 123456
+```
+
 ### Environment variables
 
 | Variable                 | Default                                        |
@@ -71,6 +86,7 @@ curl -X POST http://localhost:8080/auth/federated \
 | `JWT_REALM`              | `watsapp-order`                                |
 | `JWT_EXPIRATION_MINUTES` | `60`                                           |
 | `FIREBASE_PROJECT_ID`    | - (required for `/auth/federated`)             |
+| `WHATSAPP_VERIFY_TOKEN`  | `orderwhatsapp_verify` (change in production)  |
 | `HOST` / `PORT`          | from `application.conf` (`ktor.deployment`)    |
 
 Database credentials are read **only** from environment variables; `application.conf` no longer contains a URL, user, or password.
