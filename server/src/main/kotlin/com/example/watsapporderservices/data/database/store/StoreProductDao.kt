@@ -21,6 +21,17 @@ class StoreProductDao {
         }
     }
 
+    /** Replaces all product links of the store with [productIds]. */
+    fun replace(storeId: Int, productIds: List<Int>) = transaction {
+        StoreProducts.deleteWhere { StoreProducts.storeId eq storeId }
+        productIds.distinct().forEach { productId ->
+            StoreProducts.insert {
+                it[StoreProducts.storeId] = storeId
+                it[StoreProducts.productId] = productId
+            }
+        }
+    }
+
     fun unlink(storeId: Int, productId: Int) = transaction {
         StoreProducts.deleteWhere {
             (StoreProducts.storeId eq storeId) and (StoreProducts.productId eq productId)

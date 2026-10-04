@@ -160,7 +160,10 @@ curl http://localhost:8080/stores
 ```
 
 `GET /products/filter` returns the products of a store, looked up by its WhatsApp number, optionally filtered
-by name:
+by name. The name filter is lenient: the query is split into significant words (ignoring articles like "una",
+"el"), accents and punctuation are removed, and products are matched by word prefix (so `"Una Coca cola"`
+finds `"Coca cola"` and `"Coca Cola Zero"`). Products with more word matches are returned first; a blank `q`
+returns the full menu.
 
 ```sh
 curl "http://localhost:8080/products/filter?whatsappBusinessPhone=573138427026&q=cafe"

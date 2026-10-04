@@ -19,6 +19,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
+import java.text.Normalizer
+
+private const val MIN_TOKEN_LENGTH = 2
+
+private val DIACRITICS_REGEX = Regex("\\p{M}+")
+private val NON_ALPHANUMERIC_REGEX = Regex("[^a-z0-9]+")
+
+private val SEARCH_STOPWORDS = setOf(
+    "una", "uno", "un", "unos", "unas", "el", "la", "los", "las", "de", "del", "al", "a", "con", "sin",
+    "para", "por", "y", "o", "en", "que", "me", "mi", "quiero", "quiere", "quisiera", "dame", "deme",
+    "favor", "porfa", "porfavor", "gracias", "tienen", "tiene", "hay", "cual", "producto", "productos",
+    "ordenar", "pedir", "seria", "es", "son", "the", "of", "and",
+)
 
 class ProductRepositoryImpl(
     private val productDao: ProductDao,
@@ -51,12 +64,47 @@ class ProductRepositoryImpl(
     ): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
             val store = findStore(whatsappBusinessPhone, idWhatsApp) ?: return@transaction emptyList()
-            val products = productDao.findByStoreId(store.id, query)
+            val products = matchProducts(productDao.findByStoreId(store.id), query)
             val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
             val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
             products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
         }
     }
+
+    /**
+     * Lenient product search: splits the query into significant words, normalizes them (lowercase,
+     * without accents or punctuation) and keeps products whose name matches any word, ranking the ones
+     * with more matches first. A blank query returns the whole menu.
+     */
+    private fun matchProducts(products: List<ProductEntity>, query: String?): List<ProductEntity> {
+        val tokens = tokenize(query)
+        if (tokens.isEmpty()) return products
+        return products
+            .map { product -> product to score(product.name, tokens) }
+            .filter { (_, score) -> score > 0 }
+            .sortedWith(
+                compareByDescending<Pair<ProductEntity, Int>> { it.second }.thenBy { it.first.name },
+            )
+            .map { it.first }
+    }
+
+    private fun score(name: String, tokens: List<String>): Int {
+        val words = normalize(name).split(" ").filter { it.isNotBlank() }
+        val compact = words.joinToString("")
+        return tokens.count { token -> words.any { it.startsWith(token) } || compact.startsWith(token) }
+    }
+
+    private fun tokenize(query: String?): List<String> =
+        query?.let {
+            normalize(it).split(" ")
+                .filter { word -> word.length >= MIN_TOKEN_LENGTH && word !in SEARCH_STOPWORDS }
+        }.orEmpty()
+
+    private fun normalize(value: String): String =
+        Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
+            .replace(DIACRITICS_REGEX, "")
+            .replace(NON_ALPHANUMERIC_REGEX, " ")
+            .trim()
 
     override suspend fun saveProduct(request: ProductRequest): ProductResponse? = withContext(Dispatchers.IO) {
         transaction {
