@@ -77,7 +77,8 @@ fun Application.module() {
     val storeDao = StoreDao()
     val storeProductDao = StoreProductDao()
     val storeRepository = StoreRepositoryImpl(storeDao, storeProductDao)
-    val productRepository = ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao)
+    val productRepository =
+        ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao, storeProductDao)
     val sessionRepository = SessionRepositoryImpl(SessionDao())
     val orderRepository = OrderRepositoryImpl(OrderDao())
     val webhookUseCase = WebhookUseCase(

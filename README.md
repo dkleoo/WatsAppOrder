@@ -178,10 +178,22 @@ curl "http://localhost:8080/products/filter?whatsappBusinessPhone=573138427026&q
 curl "http://localhost:8080/products/filter?idWhatsApp=1379699841884103&q=cafe"
 ```
 
-The AI auto-reply uses the same logic: for each incoming message it looks up the store by the WhatsApp number
-from the webhook, filters that store's products with the client's text, and builds the prompt so the assistant
-greets the client with the store's welcome message, asks what they want to order, and lists the matching
-products as options when there is more than one match.
+The AI auto-reply uses the same search: for each incoming message it looks up the store by the WhatsApp number
+from the webhook and searches that store's products with the client's text, returning a numbered list when there
+is more than one match.
+
+### Creating products
+
+`POST /products` (create) now **requires** `storeId` and always links the product to that store in
+`store_products`. Without `storeId` it returns `400 invalid_store_id`; if the store does not exist it returns
+`400 store_not_found`. `PUT /products/{id}` updates the product and `DELETE /products/{id}` also removes its
+store links.
+
+```sh
+curl -X POST http://localhost:8080/products \
+  -H "Content-Type: application/json" \
+  -d '{"storeId":1,"name":"Coca cola","price":2000,"cost":0,"quantity":10,"type":"CREATED"}'
+```
 
 ### Environment variables
 

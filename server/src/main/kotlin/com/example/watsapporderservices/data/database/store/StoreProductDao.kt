@@ -37,4 +37,8 @@ class StoreProductDao {
             (StoreProducts.storeId eq storeId) and (StoreProducts.productId eq productId)
         }
     }
+
+    fun deleteByProductId(productId: Int) = transaction {
+        StoreProducts.deleteWhere { StoreProducts.productId eq productId }
+    }
 }

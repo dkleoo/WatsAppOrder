@@ -3,6 +3,7 @@ package com.example.watsapporderservices.routes
 import com.example.watsapporderservices.data.enum.ProductErrorCode
 import com.example.watsapporderservices.data.mapper.ProductRequest
 import com.example.watsapporderservices.data.mapper.toResponse
+import com.example.watsapporderservices.domain.usecase.ProductResult
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -52,13 +53,21 @@ fun Route.productRoutes(useCase: ProductUseCase) {
 
         post {
             val request = call.receive<ProductRequest>()
-            val saved = useCase.saveProduct(request)
-            if (saved == null) {
-                call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
-                return@post
+            when (val result = useCase.saveProduct(request)) {
+                is ProductResult.Success -> call.respond(
+                    if (request.id == null) HttpStatusCode.Created else HttpStatusCode.OK,
+                    result.product,
+                )
+
+                is ProductResult.Invalid ->
+                    call.respond(HttpStatusCode.BadRequest, result.code.toResponse())
+
+                ProductResult.ProductNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
+
+                ProductResult.StoreNotFound ->
+                    call.respond(HttpStatusCode.BadRequest, ProductErrorCode.STORE_NOT_FOUND.toResponse())
             }
-            val status = if (request.id == null) HttpStatusCode.Created else HttpStatusCode.OK
-            call.respond(status, saved)
         }
 
         put("/{id}") {
@@ -68,12 +77,18 @@ fun Route.productRoutes(useCase: ProductUseCase) {
                 return@put
             }
             val request = call.receive<ProductRequest>()
-            val updated = useCase.updateProduct(id, request)
-            if (updated == null) {
-                call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
-                return@put
+            when (val result = useCase.updateProduct(id, request)) {
+                is ProductResult.Success -> call.respond(HttpStatusCode.OK, result.product)
+
+                is ProductResult.Invalid ->
+                    call.respond(HttpStatusCode.BadRequest, result.code.toResponse())
+
+                ProductResult.ProductNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
+
+                ProductResult.StoreNotFound ->
+                    call.respond(HttpStatusCode.BadRequest, ProductErrorCode.STORE_NOT_FOUND.toResponse())
             }
-            call.respond(HttpStatusCode.OK, updated)
         }
 
         delete("/{id}") {
