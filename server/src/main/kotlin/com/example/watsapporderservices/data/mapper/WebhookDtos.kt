@@ -73,9 +73,29 @@ data class WhatsAppIncomingMessage(
     val timestamp: String? = null,
     val type: String? = null,
     val text: WhatsAppIncomingText? = null,
+    val interactive: WhatsAppIncomingInteractive? = null,
 )
 
 @Serializable
 data class WhatsAppIncomingText(
     val body: String? = null,
+)
+
+@Serializable
+data class WhatsAppIncomingInteractive(
+    val type: String? = null,
+    @SerialName("list_reply") val listReply: WhatsAppListReply? = null,
+    @SerialName("button_reply") val buttonReply: WhatsAppButtonReply? = null,
+)
+
+@Serializable
+data class WhatsAppListReply(
+    val id: String? = null,
+    val title: String? = null,
+)
+
+@Serializable
+data class WhatsAppButtonReply(
+    val id: String? = null,
+    val title: String? = null,
 )

@@ -117,17 +117,18 @@ in the background, asks the Groq model for a reply and sends it back through the
 
 The conversation is stateful per customer through the `sessions` table:
 
-- **On the first message of a session** the bot sends the store's welcome message **plus the address and phone**
-  **once**. Afterwards it does not repeat them, unless the client asks for the address or phone.
-- If there are **no messages for 2 minutes**, the session resets: the state is cleared and the opening message is
-  sent again on the next message.
-- Products are **always looked up with the store filter** (`GET /products/filter` logic). The AI does **not**
-  invent products: if there is more than one match, the bot replies with a **numbered list** and resolves the
-  client's numeric choice deterministically. If there is no match, it lists the store's menu.
-- If the selected product has **steps/ingredients**, the bot lists them and asks which ones are wanted.
-- The opening message also tells the client that they can type **`mi catálogo`** at any time to see all products;
-  that keyword (and `catálogo`, `menu`, `qué venden`, ...) returns the catalog as a numbered list. It uses the
-  products endpoint and, if the store has no linked products, falls back to all products.
+- **On the first message of a session** the bot sends the store's welcome message, the address and the phone
+  **once**, tells the client they can type **`mi catálogo`** at any time, and asks **"¿Qué deseas ordenar?"**
+- If there are **no messages for 2 minutes**, the session resets and the opening message is sent again.
+- Products are shown as an **interactive WhatsApp list** (not numbered text). Each row id is `product:<id>`, so
+  the selection is resolved by id and cannot be mistyped. Lists hold at most 10 rows, so when there are more
+  products the list is **paged**: a "Ver más productos" row (`more:<page>`) loads the next page.
+- When a product has **steps/ingredients**, they are shown as another interactive list.
+- After each configured item the bot asks **"¿Deseas agregar algo más?"** with **Sí / No** reply buttons
+  (`confirm:yes` / `confirm:no`).
+- `mi catálogo` (or `catálogo`, `menu`, `qué venden`, ...) shows every product in a paged interactive list, at any
+  point in the conversation.
+- The webhook reads `text` **and** `interactive` (`list_reply.id`, `button_reply.id`).
 
 ### Orders
 
