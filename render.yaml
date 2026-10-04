@@ -14,3 +14,7 @@ services:
         sync: false
       - key: DATABASE_MAX_POOL_SIZE
         value: "5"
+      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
+        value: "1415775780434889"
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        value: "1379699841884103"

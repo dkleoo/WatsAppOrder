@@ -4,6 +4,7 @@ import com.example.watsapporderservices.data.database.DatabaseConfig
 import com.example.watsapporderservices.data.database.DatabaseFactory
 import com.example.watsapporderservices.data.repositoryImpl.AuthRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.InputRepositoryImpl
+import com.example.watsapporderservices.data.repositoryImpl.MessageRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImpl
 import com.example.watsapporderservices.data.security.FirebaseConfig
 import com.example.watsapporderservices.data.security.FirebaseTokenVerifier
@@ -19,6 +20,7 @@ import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
 import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
+import com.example.watsapporderservices.domain.usecase.MessageUseCase
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
 import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import com.example.watsapporderservices.plugins.configureSecurity
@@ -26,6 +28,7 @@ import com.example.watsapporderservices.plugins.configureSerialization
 import com.example.watsapporderservices.plugins.configureStatusPages
 import com.example.watsapporderservices.routes.authRoutes
 import com.example.watsapporderservices.routes.inputRoutes
+import com.example.watsapporderservices.routes.messageRoutes
 import com.example.watsapporderservices.routes.productRoutes
 import com.example.watsapporderservices.routes.webhookRoutes
 import io.ktor.server.application.Application
@@ -54,7 +57,9 @@ fun Application.module() {
         FirebaseTokenVerifier(firebaseConfig.projectId),
     )
     val authUseCase = AuthUseCase(authRepository)
-    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(WhatsAppConfig.from(environment.config, System.getenv())))
+    val whatsAppConfig = WhatsAppConfig.from(environment.config, System.getenv())
+    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(whatsAppConfig))
+    val messageUseCase = MessageUseCase(MessageRepositoryImpl(whatsAppConfig))
     val productUseCase = ProductUseCase(ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao()))
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
@@ -63,6 +68,7 @@ fun Application.module() {
     routing {
         authRoutes(authUseCase)
         webhookRoutes(webhookUseCase)
+        messageRoutes(messageUseCase)
         productRoutes(productUseCase)
         inputRoutes(inputUseCase)
     }

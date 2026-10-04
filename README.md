@@ -72,6 +72,27 @@ curl "http://localhost:8080/webhook?hub.mode=subscribe&hub.verify_token=orderwha
 # -> 123456
 ```
 
+### Send a WhatsApp message
+
+`POST /messages` sends a text message through the WhatsApp Cloud API. The recipient is given as an
+`extension` (country code) plus a `number`; the server strips non-digits and joins them (e.g. `+57` + `3138427026`
+→ `573138427026`).
+
+```sh
+curl -X POST http://localhost:8080/messages \
+  -H "Content-Type: application/json" \
+  -d '{"extension":"+57","number":"3138427026","message":"Hola desde la API"}'
+```
+
+Success (`200`):
+
+```json
+{ "messageId": "wamid.HBg...", "to": "573138427026" }
+```
+
+Errors: `400` for invalid `extension`/`number`/`message`, `503` when the access token or phone number id is not
+configured, `502` when the Graph API rejects the request.
+
 ### Environment variables
 
 | Variable                 | Default                                        |
@@ -87,6 +108,9 @@ curl "http://localhost:8080/webhook?hub.mode=subscribe&hub.verify_token=orderwha
 | `JWT_EXPIRATION_MINUTES` | `60`                                           |
 | `FIREBASE_PROJECT_ID`    | - (required for `/auth/federated`)             |
 | `WHATSAPP_VERIFY_TOKEN`  | `orderwhatsapp_verify` (change in production)  |
+| `WHATSAPP_ACCESS_TOKEN`  | - (required for `POST /messages`; alias `WHATAPP_PERMANT`) |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | `1415775780434889` (WhatsApp Business Account id) |
+| `WHATSAPP_PHONE_NUMBER_ID` | `1379699841884103` (sender phone number id)  |
 | `HOST` / `PORT`          | from `application.conf` (`ktor.deployment`)    |
 
 Database credentials are read **only** from environment variables; `application.conf` no longer contains a URL, user, or password.
