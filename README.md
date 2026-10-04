@@ -38,6 +38,11 @@ The backend JWT includes the `storeId` claim (when the user has a store), so the
 `/auth/me`. If the store is created after logging in, call `POST /auth/refresh` (with the token) to get a fresh
 token that includes the new `storeId`.
 
+When a **new** user authenticates (`/auth/register` or `/auth/federated`), the user and their **store** are
+created together in the same transaction (`stores.user_id` links them). The store starts with a default welcome
+message and empty address/phone data, which the user completes with `PUT /stores/{id}`. An existing user with
+valid credentials is only authenticated (their store already exists).
+
 Errors return `{ "error": "<code>" }` with codes: `invalid_email`, `invalid_password`, `invalid_name`,
 `email_already_registered`, `invalid_credentials`, `invalid_request`, `invalid_token`, `unauthorized`,
 `user_not_found`, `internal_error`.

@@ -1,6 +1,10 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
+import com.example.watsapporderservices.data.database.store.StoreDao
+import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.database.user.UserDao
+import com.example.watsapporderservices.data.database.user.UserEntity
+import com.example.watsapporderservices.data.database.user.Users
 import com.example.watsapporderservices.data.enum.AuthErrorCode
 import com.example.watsapporderservices.data.enum.AuthProvider
 import com.example.watsapporderservices.data.mapper.FederatedAuthRequest
@@ -16,6 +20,10 @@ import com.example.watsapporderservices.domain.repository.AuthRepository
 import com.example.watsapporderservices.domain.usecase.AuthResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.core.eq
+import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+import org.jetbrains.exposed.v1.jdbc.update
 import java.util.UUID
 
 const val MIN_PASSWORD_LENGTH = 8
@@ -26,6 +34,7 @@ private val EMAIL_PATTERN = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
 class AuthRepositoryImpl(
     private val userDao: UserDao,
+    private val storeDao: StoreDao,
     private val passwordHasher: PasswordHasher,
     private val tokenService: TokenService,
     private val firebaseTokenVerifier: FirebaseTokenVerifier,
@@ -39,8 +48,10 @@ class AuthRepositoryImpl(
             return AuthResult.EmailAlreadyRegistered
         }
         val passwordHash = passwordHasher.hash(request.password)
-        val user = withContext(Dispatchers.IO) { userDao.create(email, name, passwordHash) }
-        return success(user.id, user.email, user.toResponse())
+        val user = withContext(Dispatchers.IO) {
+            createUserWithStore(email, name, passwordHash, firebaseUid = null, provider = null)
+        }
+        return success(user)
     }
 
     override suspend fun login(request: LoginRequest): AuthResult {
@@ -53,7 +64,7 @@ class AuthRepositoryImpl(
         if (!passwordHasher.verify(request.password, user.passwordHash)) {
             return AuthResult.InvalidCredentials
         }
-        return success(user.id, user.email, user.toResponse())
+        return success(user)
     }
 
     override suspend fun federated(request: FederatedAuthRequest): AuthResult {
@@ -76,7 +87,7 @@ class AuthRepositoryImpl(
             val linked = withContext(Dispatchers.IO) {
                 userDao.linkFederation(byFirebaseUid.id, firebaseUid, provider, email, null)
             }
-            return success(linked.id, linked.email, linked.toResponse())
+            return success(linked)
         }
 
         if (tokenEmail != null && claims.emailVerified) {
@@ -85,7 +96,7 @@ class AuthRepositoryImpl(
                 val linked = withContext(Dispatchers.IO) {
                     userDao.linkFederation(byEmail.id, firebaseUid, provider, tokenEmail, name)
                 }
-                return success(linked.id, linked.email, linked.toResponse())
+                return success(linked)
             }
         } else if (tokenEmail != null) {
             // The email is already owned by another account but Firebase has not verified it: refuse to
@@ -99,9 +110,9 @@ class AuthRepositoryImpl(
         // Federated users authenticate through Firebase, so the password hash is an unusable sentinel.
         val passwordHash = passwordHasher.hash(UUID.randomUUID().toString())
         val user = withContext(Dispatchers.IO) {
-            userDao.createFederated(email, name, passwordHash, firebaseUid, provider)
+            createUserWithStore(email, name, passwordHash, firebaseUid, provider)
         }
-        return success(user.id, user.email, user.toResponse())
+        return success(user)
     }
 
     override suspend fun profile(userId: Int): UserResponse? =
@@ -110,11 +121,65 @@ class AuthRepositoryImpl(
     override suspend fun refresh(userId: Int): AuthResult {
         val user = withContext(Dispatchers.IO) { userDao.findById(userId) }
             ?: return AuthResult.InvalidCredentials
-        return success(user.id, user.email, user.toResponse())
+        return success(user)
     }
 
-    private fun success(userId: Int, email: String, user: UserResponse): AuthResult.Success =
-        AuthResult.Success(tokenService.issue(userId, email, user.storeId), tokenService.expirationSeconds, user)
+    /**
+     * Creates the user and, in the same transaction, their store. The store starts with empty
+     * WhatsApp/address data that the user completes later from the app (via `PUT /stores/{id}`).
+     */
+    private fun createUserWithStore(
+        email: String,
+        name: String,
+        passwordHash: String,
+        firebaseUid: String?,
+        provider: String?,
+    ): UserEntity = transaction {
+        val createdAt = System.currentTimeMillis()
+        val userId = Users.insert {
+            it[Users.email] = email
+            it[Users.name] = name
+            it[Users.passwordHash] = passwordHash
+            it[Users.firebaseUid] = firebaseUid
+            it[Users.authProvider] = provider
+            it[Users.createdAt] = createdAt
+        } get Users.id
+
+        val storeId = Stores.insert {
+            it[Stores.userId] = userId
+            it[Stores.welcomeMessage] = DEFAULT_WELCOME_MESSAGE
+            it[Stores.address] = ""
+            it[Stores.phone] = ""
+            it[Stores.whatsappBusinessPhone] = ""
+            it[Stores.idWhatsApp] = ""
+        } get Stores.id
+
+        Users.update({ Users.id eq userId }) { it[Users.storeId] = storeId }
+
+        UserEntity(
+            id = userId,
+            email = email,
+            name = name,
+            passwordHash = passwordHash,
+            firebaseUid = firebaseUid,
+            authProvider = provider,
+            storeId = storeId,
+            createdAt = createdAt,
+        )
+    }
+
+    private fun success(user: UserEntity): AuthResult.Success {
+        val storeId = resolveStoreId(user)
+        return AuthResult.Success(
+            tokenService.issue(user.id, user.email, storeId),
+            tokenService.expirationSeconds,
+            user.toResponse().copy(storeId = storeId),
+        )
+    }
+
+    /** Uses `users.store_id`, falling back to the store linked by `stores.user_id` for older users. */
+    private fun resolveStoreId(user: UserEntity): Int? =
+        user.storeId ?: storeDao.findByUserId(user.id)?.id
 
     private fun syntheticEmail(claims: FirebaseUserClaims): String {
         val localPart = claims.phoneNumber
@@ -129,5 +194,9 @@ class AuthRepositoryImpl(
         password.length < MIN_PASSWORD_LENGTH -> AuthResult.InvalidInput(AuthErrorCode.INVALID_PASSWORD)
         name.isBlank() -> AuthResult.InvalidInput(AuthErrorCode.INVALID_NAME)
         else -> null
+    }
+
+    private companion object {
+        const val DEFAULT_WELCOME_MESSAGE = "¡Hola! Bienvenido a mi tienda 🛒 ¿Qué deseas ordenar?"
     }
 }

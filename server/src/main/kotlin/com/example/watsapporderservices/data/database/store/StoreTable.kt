@@ -10,6 +10,7 @@ const val STORE_WHATSAPP_ID_MAX_LENGTH = 64
 
 object Stores : Table("stores") {
     val id = integer("id").autoIncrement()
+    val userId = integer("user_id").nullable()
     val welcomeMessage = varchar("welcome_message", WELCOME_MESSAGE_MAX_LENGTH)
     val address = varchar("address", STORE_ADDRESS_MAX_LENGTH)
     val phone = varchar("phone", STORE_PHONE_MAX_LENGTH)
@@ -21,6 +22,7 @@ object Stores : Table("stores") {
 
 data class StoreEntity(
     val id: Int,
+    val userId: Int?,
     val welcomeMessage: String,
     val address: String,
     val phone: String,

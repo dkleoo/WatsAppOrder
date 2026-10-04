@@ -11,6 +11,9 @@ import com.example.watsapporderservices.domain.repository.StoreRepository
 import com.example.watsapporderservices.domain.usecase.StoreResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
+
+private const val DEFAULT_WELCOME_MESSAGE = "¡Hola! Bienvenido a mi tienda 🛒 ¿Qué deseas ordenar?"
 
 class StoreRepositoryImpl(
     private val storeDao: StoreDao,
@@ -35,52 +38,72 @@ class StoreRepositoryImpl(
     }
 
     override suspend fun create(userId: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
-        val parsed = parse(request)
-        if (parsed is Parsed.Invalid) return@withContext StoreResult.Invalid(parsed.code)
-        val store = (parsed as Parsed.Ok).store
-
-        val alreadyExists = storeDao.findByWhatsappBusinessPhone(store.whatsappBusinessPhone) != null ||
-            storeDao.findByIdWhatsApp(store.idWhatsApp) != null
-        if (alreadyExists) return@withContext StoreResult.AlreadyExists
-
-        val created = storeDao.insert(
-            welcomeMessage = store.welcomeMessage,
-            address = store.address,
-            phone = store.phone,
-            whatsappBusinessPhone = store.whatsappBusinessPhone,
-            idWhatsApp = store.idWhatsApp,
-        )
-        // The authenticated user's active store is this one.
-        userDao.updateStoreId(userId, created.id)
-        StoreResult.Success(created.toResponse())
+        transaction {
+            val existing = storeDao.findByUserId(userId)
+            if (existing != null) return@transaction updateStore(existing, request)
+            createStore(userId, request)
+        }
     }
 
     override suspend fun update(id: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
+        transaction {
+            val store = storeDao.findById(id) ?: return@transaction StoreResult.NotFound
+            updateStore(store, request)
+        }
+    }
+
+    private fun createStore(userId: Int, request: StoreRequest): StoreResult {
         val parsed = parse(request)
-        if (parsed is Parsed.Invalid) return@withContext StoreResult.Invalid(parsed.code)
+        if (parsed is Parsed.Invalid) return StoreResult.Invalid(parsed.code)
         val store = (parsed as Parsed.Ok).store
 
-        if (storeDao.findById(id) == null) return@withContext StoreResult.NotFound
+        val conflict = hasConflict(store.whatsappBusinessPhone, store.idWhatsApp, excludeId = null)
+        if (conflict) return StoreResult.AlreadyExists
 
-        val byPhone = storeDao.findByWhatsappBusinessPhone(store.whatsappBusinessPhone)
-        val byIdWhatsApp = storeDao.findByIdWhatsApp(store.idWhatsApp)
-        val takenByOther = (byPhone != null && byPhone.id != id) || (byIdWhatsApp != null && byIdWhatsApp.id != id)
-        if (takenByOther) return@withContext StoreResult.AlreadyExists
-
-        storeDao.update(
-            id = id,
+        val created = storeDao.insert(
+            userId = userId,
             welcomeMessage = store.welcomeMessage,
             address = store.address,
             phone = store.phone,
             whatsappBusinessPhone = store.whatsappBusinessPhone,
             idWhatsApp = store.idWhatsApp,
         )
-        StoreResult.Success(store.copy(id = id).toResponse())
+        userDao.updateStoreId(userId, created.id)
+        return StoreResult.Success(created.toResponse())
+    }
+
+    private fun updateStore(store: StoreEntity, request: StoreRequest): StoreResult {
+        // PARTIAL: only the fields present in the body are replaced; the rest keep their current value.
+        val updated = store.copy(
+            welcomeMessage = request.welcomeMessage?.trim() ?: store.welcomeMessage,
+            address = request.address?.trim() ?: store.address,
+            phone = request.phone?.trim() ?: store.phone,
+            whatsappBusinessPhone = request.whatsappBusinessPhone?.filter { it.isDigit() }
+                ?.takeIf { it.isNotBlank() } ?: store.whatsappBusinessPhone,
+            idWhatsApp = request.idWhatsApp?.trim()?.takeIf { it.isNotBlank() } ?: store.idWhatsApp,
+        )
+        if (updated.welcomeMessage.isBlank() || updated.address.isBlank() ||
+            updated.phone.isBlank() || updated.whatsappBusinessPhone.isBlank() || updated.idWhatsApp.isBlank()
+        ) {
+            return StoreResult.Invalid(StoreErrorCode.INVALID_ADDRESS)
+        }
+        if (hasConflict(updated.whatsappBusinessPhone, updated.idWhatsApp, excludeId = store.id)) {
+            return StoreResult.AlreadyExists
+        }
+        storeDao.updateFull(updated)
+        return StoreResult.Success(updated.toResponse())
+    }
+
+    private fun hasConflict(whatsappBusinessPhone: String, idWhatsApp: String, excludeId: Int?): Boolean {
+        val byPhone = storeDao.findByWhatsappBusinessPhone(whatsappBusinessPhone)
+        val byIdWhatsApp = storeDao.findByIdWhatsApp(idWhatsApp)
+        return (byPhone != null && byPhone.id != excludeId) || (byIdWhatsApp != null && byIdWhatsApp.id != excludeId)
     }
 
     private fun parse(request: StoreRequest): Parsed {
         val store = StoreEntity(
             id = 0,
+            userId = null,
             welcomeMessage = request.welcomeMessage?.trim().orEmpty(),
             address = request.address?.trim().orEmpty(),
             phone = request.phone?.trim().orEmpty(),

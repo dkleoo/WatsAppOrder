@@ -61,8 +61,10 @@ fun Application.module() {
         log.warn("FIREBASE_PROJECT_ID is not set: /auth/federated will reject every token")
     }
     val userDao = UserDao()
+    val storeDao = StoreDao()
     val authRepository = AuthRepositoryImpl(
         userDao,
+        storeDao,
         PasswordHasher(),
         tokenService,
         FirebaseTokenVerifier(firebaseConfig.projectId),
@@ -74,7 +76,6 @@ fun Application.module() {
         log.warn("TOKEN_GROK is not set: the WhatsApp auto-reply will not work")
     }
     val messageRepository = MessageRepositoryImpl(whatsAppConfig)
-    val storeDao = StoreDao()
     val storeRepository = StoreRepositoryImpl(storeDao, userDao)
     val productRepository = ProductRepositoryImpl(
         ProductDao(),

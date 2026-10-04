@@ -12,7 +12,6 @@ data class StoreRequest(
     val whatsappBusinessPhone: String? = null,
     val idWhatsApp: String? = null,
 )
-
 @Serializable
 data class StoreResponse(
     val id: Int,
@@ -31,5 +30,4 @@ fun StoreEntity.toResponse(): StoreResponse = StoreResponse(
     whatsappBusinessPhone = whatsappBusinessPhone,
     idWhatsApp = idWhatsApp,
 )
-
 fun StoreErrorCode.toResponse(): ErrorResponse = ErrorResponse(code)
