@@ -18,8 +18,10 @@ import com.example.watsapporderservices.data.database.input.InputDao
 import com.example.watsapporderservices.data.database.product.ProductDao
 import com.example.watsapporderservices.data.database.step.StepDao
 import com.example.watsapporderservices.data.database.step.StepInputDao
+import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
+import com.example.watsapporderservices.data.repositoryImpl.StoreRepositoryImpl
 import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
 import com.example.watsapporderservices.domain.usecase.MessageUseCase
@@ -65,9 +67,20 @@ fun Application.module() {
         log.warn("TOKEN_GROK is not set: the WhatsApp auto-reply will not work")
     }
     val messageRepository = MessageRepositoryImpl(whatsAppConfig)
-    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(whatsAppConfig, AiRepositoryImpl(groqConfig), messageRepository))
+    val storeDao = StoreDao()
+    val storeRepository = StoreRepositoryImpl(storeDao)
+    val productRepository = ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao)
+    val webhookUseCase = WebhookUseCase(
+        WebhookRepositoryImpl(
+            whatsAppConfig,
+            AiRepositoryImpl(groqConfig),
+            messageRepository,
+            storeRepository,
+            productRepository,
+        ),
+    )
     val messageUseCase = MessageUseCase(messageRepository)
-    val productUseCase = ProductUseCase(ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao()))
+    val productUseCase = ProductUseCase(productRepository)
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
     configureStatusPages()

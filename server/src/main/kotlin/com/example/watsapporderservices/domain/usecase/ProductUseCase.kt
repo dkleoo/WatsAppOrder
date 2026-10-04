@@ -9,6 +9,12 @@ class ProductUseCase(private val repository: ProductRepository) {
 
     suspend fun getProduct(id: Int): ProductResponse? = repository.getProduct(id)
 
+    suspend fun searchByStore(
+        whatsappBusinessPhone: String?,
+        idWhatsApp: String?,
+        query: String?,
+    ): List<ProductResponse> = repository.searchByStore(whatsappBusinessPhone, idWhatsApp, query)
+
     suspend fun saveProduct(request: ProductRequest): ProductResponse? = repository.saveProduct(request)
 
     suspend fun updateProduct(id: Int, request: ProductRequest): ProductResponse? =

@@ -4,6 +4,8 @@ import com.example.watsapporderservices.data.database.input.Inputs
 import com.example.watsapporderservices.data.database.product.Products
 import com.example.watsapporderservices.data.database.step.StepInputs
 import com.example.watsapporderservices.data.database.step.Steps
+import com.example.watsapporderservices.data.database.store.StoreProducts
+import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.database.user.AUTH_PROVIDER_MAX_LENGTH
 import com.example.watsapporderservices.data.database.user.FIREBASE_UID_MAX_LENGTH
 import com.example.watsapporderservices.data.database.user.Users
@@ -29,7 +31,7 @@ object DatabaseFactory {
         )
         Database.connect(dataSource)
         transaction {
-            SchemaUtils.create(Users, Products, Steps, Inputs, StepInputs)
+            SchemaUtils.create(Users, Products, Steps, Inputs, StepInputs, Stores, StoreProducts)
             migrateUsers()
         }
     }

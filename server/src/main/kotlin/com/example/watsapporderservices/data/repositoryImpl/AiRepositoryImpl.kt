@@ -19,9 +19,9 @@ private const val CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/co
 private const val REQUEST_TIMEOUT_SECONDS = 60L
 private const val ERROR_BODY_SNIPPET = 300
 
-private const val SYSTEM_PROMPT =
-    "Eres el asistente virtual de WatsAppOrder. Respondes por WhatsApp de forma breve, clara y amable, " +
-        "en el mismo idioma del cliente. No inventes datos de pedidos ni prometas cosas que no puedas cumplir."
+private const val DEFAULT_SYSTEM_PROMPT =
+    "Eres el asistente virtual de la tienda. Respondes por WhatsApp de forma breve, clara y amable, " +
+        "en el mismo idioma del cliente."
 
 class AiRepositoryImpl(
     private val config: GroqConfig,
@@ -34,7 +34,7 @@ class AiRepositoryImpl(
         .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
         .build()
 
-    override suspend fun reply(message: String): AiResult {
+    override suspend fun reply(systemPrompt: String, message: String): AiResult {
         if (!config.isConfigured) return AiResult.NotConfigured
 
         val body = json.encodeToString(
@@ -42,7 +42,10 @@ class AiRepositoryImpl(
             GroqChatRequest(
                 model = config.model,
                 messages = listOf(
-                    GroqMessage(role = "system", content = SYSTEM_PROMPT),
+                    GroqMessage(
+                        role = "system",
+                        content = systemPrompt.takeIf { it.isNotBlank() } ?: DEFAULT_SYSTEM_PROMPT,
+                    ),
                     GroqMessage(role = "user", content = message),
                 ),
                 temperature = config.temperature,

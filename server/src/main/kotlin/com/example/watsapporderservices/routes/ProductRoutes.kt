@@ -21,6 +21,14 @@ fun Route.productRoutes(useCase: ProductUseCase) {
             call.respond(useCase.getProducts())
         }
 
+        get("/filter") {
+            val whatsapp = call.request.queryParameters["whatsappBusinessPhone"]
+                ?: call.request.queryParameters["whatsapp"]
+            val idWhatsApp = call.request.queryParameters["idWhatsApp"]
+            val query = call.request.queryParameters["q"]
+            call.respond(useCase.searchByStore(whatsapp, idWhatsApp, query))
+        }
+
         get("/{id}") {
             val id = call.parameters["id"]?.toIntOrNull()
             if (id == null) {

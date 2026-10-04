@@ -8,6 +8,13 @@ interface ProductRepository {
 
     suspend fun getProduct(id: Int): ProductResponse?
 
+    /** Products of the store identified by its WhatsApp numbers, optionally filtered by [query]. */
+    suspend fun searchByStore(
+        whatsappBusinessPhone: String?,
+        idWhatsApp: String?,
+        query: String?,
+    ): List<ProductResponse>
+
     suspend fun saveProduct(request: ProductRequest): ProductResponse?
 
     suspend fun updateProduct(id: Int, request: ProductRequest): ProductResponse?

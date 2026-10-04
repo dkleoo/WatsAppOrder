@@ -105,6 +105,29 @@ in the background, asks the Groq model for a reply and sends it back through the
   `GROQ_MAX_COMPLETION_TOKENS`, `GROQ_TOP_P`, `GROQ_REASONING_EFFORT`).
 - Duplicate deliveries of the same Meta message id are ignored.
 
+### Stores and product filtering
+
+The `stores` table holds the per-store configuration: `id`, `welcome_message`, `address`, `phone`,
+`whatsapp_business_phone` (the `display_phone_number` Meta sends in the webhook) and `id_whatsapp`
+(the `phone_number_id`).
+
+Products are related to a store through the `store_products` table (`store_id`, `product_id`); this avoids
+altering the existing `products` table (no migration yet).
+
+`GET /products/filter` returns the products of a store, looked up by its WhatsApp number, optionally filtered
+by name:
+
+```sh
+curl "http://localhost:8080/products/filter?whatsappBusinessPhone=573138427026&q=cafe"
+# or by phone number id:
+curl "http://localhost:8080/products/filter?idWhatsApp=1379699841884103&q=cafe"
+```
+
+The AI auto-reply uses the same logic: for each incoming message it looks up the store by the WhatsApp number
+from the webhook, filters that store's products with the client's text, and builds the prompt so the assistant
+greets the client with the store's welcome message, asks what they want to order, and lists the matching
+products as options when there is more than one match.
+
 ### Environment variables
 
 | Variable                 | Default                                        |

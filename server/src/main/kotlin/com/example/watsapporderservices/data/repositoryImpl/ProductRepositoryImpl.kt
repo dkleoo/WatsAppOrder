@@ -7,6 +7,8 @@ import com.example.watsapporderservices.data.database.product.ProductEntity
 import com.example.watsapporderservices.data.database.step.StepDao
 import com.example.watsapporderservices.data.database.step.StepEntity
 import com.example.watsapporderservices.data.database.step.StepInputDao
+import com.example.watsapporderservices.data.database.store.StoreDao
+import com.example.watsapporderservices.data.database.store.StoreEntity
 import com.example.watsapporderservices.data.enum.ProductType
 import com.example.watsapporderservices.data.mapper.ProductRequest
 import com.example.watsapporderservices.data.mapper.ProductResponse
@@ -23,6 +25,7 @@ class ProductRepositoryImpl(
     private val stepDao: StepDao,
     private val stepInputDao: StepInputDao,
     private val inputDao: InputDao,
+    private val storeDao: StoreDao,
 ) : ProductRepository {
     override suspend fun getProducts(): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
@@ -38,6 +41,20 @@ class ProductRepositoryImpl(
             val product = productDao.findById(id) ?: return@transaction null
             val steps = stepDao.findByProductId(id)
             product.toResponse(steps, resolveInputsByStep(steps.map { it.id }))
+        }
+    }
+
+    override suspend fun searchByStore(
+        whatsappBusinessPhone: String?,
+        idWhatsApp: String?,
+        query: String?,
+    ): List<ProductResponse> = withContext(Dispatchers.IO) {
+        transaction {
+            val store = findStore(whatsappBusinessPhone, idWhatsApp) ?: return@transaction emptyList()
+            val products = productDao.findByStoreId(store.id, query)
+            val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
+            val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
+            products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
         }
     }
 
@@ -80,8 +97,13 @@ class ProductRepositoryImpl(
         }
     }
 
-    private fun resolveInputsByStep(stepIds: List<Int>): Map<Int, List<InputEntity>> {
-        val links = stepInputDao.findByStepIds(stepIds)
+    private fun findStore(whatsappBusinessPhone: String?, idWhatsApp: String?): StoreEntity? {
+        val phoneDigits = whatsappBusinessPhone?.filter { it.isDigit() }?.takeIf { it.isNotBlank() }
+        if (phoneDigits != null) storeDao.findByWhatsappBusinessPhone(phoneDigits)?.let { return it }
+        return idWhatsApp?.takeIf { it.isNotBlank() }?.let { storeDao.findByIdWhatsApp(it) }
+    }
+
+    private fun resolveInputsByStep(stepIds: List<Int>): Map<Int, List<InputEntity>> {        val links = stepInputDao.findByStepIds(stepIds)
         val inputsById = inputDao.findByIds(links.map { it.inputId }.distinct()).associateBy { it.id }
         return links.groupBy { it.stepId }
             .mapValues { (_, stepLinks) -> stepLinks.mapNotNull { inputsById[it.inputId] } }
