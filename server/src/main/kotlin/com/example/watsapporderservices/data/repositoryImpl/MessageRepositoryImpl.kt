@@ -14,6 +14,7 @@ import com.example.watsapporderservices.data.mapper.WhatsAppListSection
 import com.example.watsapporderservices.data.mapper.WhatsAppReplyButton
 import com.example.watsapporderservices.data.mapper.WhatsAppReplyRef
 import com.example.watsapporderservices.data.mapper.WhatsAppSendResponse
+import com.example.watsapporderservices.data.mapper.WhatsAppInteractiveText
 import com.example.watsapporderservices.data.mapper.WhatsAppTextBody
 import com.example.watsapporderservices.data.mapper.WhatsAppTextPayload
 import com.example.watsapporderservices.data.security.WhatsAppConfig
@@ -118,7 +119,7 @@ class MessageRepositoryImpl(
             WhatsAppListPayload(
                 to = toDigits,
                 interactive = WhatsAppListInteractive(
-                    body = WhatsAppTextBody(body.take(MAX_LIST_BODY_LENGTH)),
+                    body = WhatsAppInteractiveText(text = body.take(MAX_LIST_BODY_LENGTH)),
                     action = WhatsAppListAction(
                         button = buttonText.take(MAX_BUTTON_TITLE_LENGTH),
                         sections = listOf(
@@ -170,7 +171,7 @@ class MessageRepositoryImpl(
             WhatsAppListPayload(
                 to = toDigits,
                 interactive = WhatsAppListInteractive(
-                    body = WhatsAppTextBody(body.take(MAX_LIST_BODY_LENGTH)),
+                    body = WhatsAppInteractiveText(text = body.take(MAX_LIST_BODY_LENGTH)),
                     action = WhatsAppListAction(
                         button = buttonText.take(MAX_BUTTON_TITLE_LENGTH),
                         sections = sections,
@@ -200,7 +201,7 @@ class MessageRepositoryImpl(
             WhatsAppButtonsPayload(
                 to = toDigits,
                 interactive = WhatsAppButtonsInteractive(
-                    body = WhatsAppTextBody(body),
+                    body = WhatsAppInteractiveText(text = body),
                     action = WhatsAppButtonsAction(
                         buttons = buttons.map {
                             WhatsAppReplyButton(

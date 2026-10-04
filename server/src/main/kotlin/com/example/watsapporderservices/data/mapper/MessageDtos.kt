@@ -52,7 +52,7 @@ internal data class WhatsAppListPayload(
 internal data class WhatsAppListInteractive(
     val type: String = "list",
     val header: WhatsAppInteractiveText? = null,
-    val body: WhatsAppTextBody,
+    val body: WhatsAppInteractiveText,
     val action: WhatsAppListAction,
 )
 
@@ -87,7 +87,7 @@ internal data class WhatsAppButtonsPayload(
 @Serializable
 internal data class WhatsAppButtonsInteractive(
     val type: String = "button",
-    val body: WhatsAppTextBody,
+    val body: WhatsAppInteractiveText,
     val action: WhatsAppButtonsAction,
 )
 
