@@ -39,6 +39,11 @@ private val STORE_INFO_KEYWORDS = listOf(
     "telefono", "teléfono", "contacto", "whatsapp",
 )
 
+private val GREETING_WORDS = listOf(
+    "hola", "buenas", "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+    "hey", "hi", "hello", "saludos", "que tal", "qué tal",
+)
+
 class WebhookRepositoryImpl(
     private val config: WhatsAppConfig,
     private val aiRepository: AiRepository,
@@ -89,7 +94,9 @@ class WebhookRepositoryImpl(
             if (!markProcessed(incoming.id)) return@forEach
 
             val session = sessionRepository.resume(incoming.from, store?.id)
-            val reply = handleConversation(store, business, session, incoming.text)
+            val body = handleConversation(store, business, session, incoming.text)
+            // The welcome + address + phone are sent only once, at the start of the session.
+            val reply = if (session.isNew && store != null) "${initialGreeting(store)}\n\n$body" else body
 
             when (val sent = messageRepository.sendText(incoming.from, reply.take(MAX_REPLY_LENGTH))) {
                 is MessageResult.Sent -> {
@@ -110,17 +117,14 @@ class WebhookRepositoryImpl(
         business: BusinessNumbers,
         session: SessionInfo,
         text: String,
-    ): String {
-        val welcome = if (session.isNew) store?.let { initialGreeting(it) } ?: "" else ""
-        return when (session.state) {
-            SessionState.IDLE -> handleIdle(store, business, session, text, welcome)
-            SessionState.SELECTING_PRODUCT -> handleProductSelection(store, session, text, welcome)
-            SessionState.SELECTING_INGREDIENTS -> handleIngredients(session, text)
-            SessionState.AWAITING_QUANTITY -> handleQuantity(session, text)
-            SessionState.AWAITING_NAME -> handleName(session, text)
-            SessionState.AWAITING_ADDRESS -> handleAddress(session, text)
-            SessionState.AWAITING_PAYMENT -> handlePayment(session, text)
-        }
+    ): String = when (session.state) {
+        SessionState.IDLE -> handleIdle(store, business, session, text)
+        SessionState.SELECTING_PRODUCT -> handleProductSelection(session, text)
+        SessionState.SELECTING_INGREDIENTS -> handleIngredients(session, text)
+        SessionState.AWAITING_QUANTITY -> handleQuantity(session, text)
+        SessionState.AWAITING_NAME -> handleName(session, text)
+        SessionState.AWAITING_ADDRESS -> handleAddress(session, text)
+        SessionState.AWAITING_PAYMENT -> handlePayment(session, text)
     }
 
     private suspend fun handleIdle(
@@ -128,49 +132,61 @@ class WebhookRepositoryImpl(
         business: BusinessNumbers,
         session: SessionInfo,
         text: String,
-        welcome: String,
     ): String {
         if (!session.isNew && store != null && asksForStoreInfo(text)) return storeInfo(store)
 
+        if (isGreeting(text)) {
+            return offerMenu(business, session)
+        }
+
         val products = productRepository.searchByStore(business.phone, business.idWhatsApp, text)
         return when {
-            products.size > 1 -> {
-                saveState(session, SessionState.SELECTING_PRODUCT, products.map { it.id })
-                "${welcome}Encontré varias opciones:\n${buildOptions(products)}\nResponde con el número de la que deseas."
-            }
-
-            products.size == 1 -> startProduct(store, session, products.single())
-
-            else -> {
-                val menu = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
-                if (menu.isEmpty()) {
-                    "$welcome No encontré productos disponibles en esta tienda."
-                } else {
-                    saveState(session, SessionState.SELECTING_PRODUCT, menu.map { it.id })
-                    "${welcome}No encontré \"$text\". Estos son los productos disponibles:\n" +
-                        "${buildOptions(menu)}\nResponde con el número de la que deseas."
-                }
-            }
+            products.isNotEmpty() -> offerProducts(session, products)
+            else -> menuAfterNoMatch(business, session, text)
         }
+    }
+
+    private suspend fun offerMenu(business: BusinessNumbers, session: SessionInfo): String {
+        val menu = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
+        if (menu.isEmpty()) return "¿Qué deseas ordenar?"
+        saveState(session, SessionState.SELECTING_PRODUCT, menu.map { it.id })
+        return "¿Qué deseas ordenar? Estos son nuestros productos:\n${buildOptions(menu)}\n" +
+            "Responde con el número de la que deseas."
+    }
+
+    private suspend fun menuAfterNoMatch(
+        business: BusinessNumbers,
+        session: SessionInfo,
+        text: String,
+    ): String {
+        val menu = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
+        if (menu.isEmpty()) return "No tengo productos disponibles por ahora."
+        saveState(session, SessionState.SELECTING_PRODUCT, menu.map { it.id })
+        return "No tengo \"$text\" en el menú. Estos son nuestros productos:\n${buildOptions(menu)}\n" +
+            "Responde con el número de la que deseas."
+    }
+
+    private suspend fun offerProducts(session: SessionInfo, products: List<ProductResponse>): String {
+        if (products.size == 1) return startProduct(session, products.single())
+        saveState(session, SessionState.SELECTING_PRODUCT, products.map { it.id })
+        return "Encontré varias opciones:\n${buildOptions(products)}\nResponde con el número de la que deseas."
     }
 
     private suspend fun handleProductSelection(
-        store: StoreResponse?,
         session: SessionInfo,
         text: String,
-        welcome: String,
     ): String {
         val index = text.trim().toIntOrNull()
         if (index == null || index !in 1..session.optionProductIds.size) {
-            return "${welcome}Responde con el número de una de las opciones."
+            return "Responde con el número de una de las opciones."
         }
         val product = productRepository.getProduct(session.optionProductIds[index - 1])
-            ?: return "${welcome}No pude encontrar esa opción, intenta de nuevo."
-        return startProduct(store, session, product)
+            ?: return "No pude encontrar esa opción, intenta de nuevo."
+        return startProduct(session, product)
     }
 
-    private suspend fun startProduct(store: StoreResponse?, session: SessionInfo, product: ProductResponse): String {
-        val created = orderRepository.createDraft(store?.id, session.customerPhone)
+    private suspend fun startProduct(session: SessionInfo, product: ProductResponse): String {
+        val created = orderRepository.createDraft(session.storeId, session.customerPhone)
         val order = orderRepository.save(
             created.copy(
                 productId = product.id,
@@ -276,7 +292,7 @@ class WebhookRepositoryImpl(
         }
 
     private fun initialGreeting(store: StoreResponse): String =
-        "${store.welcomeMessage}\n\n📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}\n\n¿Qué deseas ordenar?"
+        "${store.welcomeMessage}\n\n📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}"
 
     private fun storeInfo(store: StoreResponse): String =
         "📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}"
@@ -284,6 +300,11 @@ class WebhookRepositoryImpl(
     private fun asksForStoreInfo(text: String): Boolean {
         val normalized = text.lowercase()
         return STORE_INFO_KEYWORDS.any { normalized.contains(it) }
+    }
+
+    private fun isGreeting(text: String): Boolean {
+        val normalized = text.lowercase().trim()
+        return normalized.length <= 25 && GREETING_WORDS.any { normalized.contains(it) }
     }
 
     private fun buildOptions(products: List<ProductResponse>): String =
