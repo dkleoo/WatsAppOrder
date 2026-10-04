@@ -18,14 +18,15 @@ class SessionRepositoryImpl(
         val existing = sessionDao.findByCustomerPhone(customerPhone)
         when {
             existing == null -> {
-                val created = sessionDao.insert(customerPhone, storeId, SessionState.IDLE, emptyList(), now)
+                val created = sessionDao.insert(customerPhone, storeId, null, SessionState.IDLE, emptyList(), now)
                 created.toInfo(isNew = true)
             }
 
             now - existing.lastActivityAt > SESSION_TTL_MILLIS -> {
-                sessionDao.update(existing.id, storeId, SessionState.IDLE, emptyList(), now)
+                sessionDao.update(existing.id, storeId, null, SessionState.IDLE, emptyList(), now)
                 existing.copy(
                     storeId = storeId,
+                    orderId = null,
                     state = SessionState.IDLE,
                     optionProductIds = emptyList(),
                     lastActivityAt = now,
@@ -33,7 +34,14 @@ class SessionRepositoryImpl(
             }
 
             else -> {
-                sessionDao.update(existing.id, storeId, existing.state, existing.optionProductIds, now)
+                sessionDao.update(
+                    existing.id,
+                    storeId,
+                    existing.orderId,
+                    existing.state,
+                    existing.optionProductIds,
+                    now,
+                )
                 existing.copy(storeId = storeId, lastActivityAt = now).toInfo(isNew = false)
             }
         }
@@ -44,9 +52,10 @@ class SessionRepositoryImpl(
         storeId: Int?,
         state: SessionState,
         optionProductIds: List<Int>,
+        orderId: Int?,
     ) {
         withContext(Dispatchers.IO) {
-            sessionDao.update(sessionId, storeId, state, optionProductIds, System.currentTimeMillis())
+            sessionDao.update(sessionId, storeId, orderId, state, optionProductIds, System.currentTimeMillis())
         }
     }
 }
@@ -55,6 +64,7 @@ private fun SessionEntity.toInfo(isNew: Boolean): SessionInfo = SessionInfo(
     id = id,
     customerPhone = customerPhone,
     storeId = storeId,
+    orderId = orderId,
     state = state,
     optionProductIds = optionProductIds,
     lastActivityAt = lastActivityAt,

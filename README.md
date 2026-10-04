@@ -107,13 +107,28 @@ in the background, asks the Groq model for a reply and sends it back through the
 
 The conversation is stateful per customer through the `sessions` table:
 
-- The store's **welcome message is sent only once per session** (on the first reply).
-- If there are **no messages for 2 minutes**, the session resets: the state is cleared and the welcome message
-  is sent again on the next message.
-- When the client asks for a product, the server searches the store's products and, if there is **more than one
-  match, replies with a numbered list** of options and stores them in the session. The client answers with the
-  number and the product is resolved deterministically (no AI guessing).
-- If there is exactly one match it is offered directly; if there is none, the AI replies using the store's menu.
+- **On the first message of a session** the bot sends the store's welcome message **plus the address and phone**
+  **once**. Afterwards it does not repeat them, unless the client asks for the address or phone.
+- If there are **no messages for 2 minutes**, the session resets: the state is cleared and the opening message is
+  sent again on the next message.
+- Products are **always looked up with the store filter** (`GET /products/filter` logic). The AI does **not**
+  invent products: if there is more than one match, the bot replies with a **numbered list** and resolves the
+  client's numeric choice deterministically. If there is no match, it lists the store's menu.
+- If the selected product has **steps/ingredients**, the bot lists them and asks which ones are wanted.
+
+### Orders
+
+The `orders` table stores the order and is related to the store (`store_id`), with `customer_phone`,
+`product_id`, `product_name`, `unit_price`, `selected_inputs`, `quantity`, `total`, `customer_name`,
+`delivery_address`, `payment_type`, `status` (`DRAFT`/`PLACED`), `created_at` and `updated_at`.
+
+Order flow (each step is persisted as a `DRAFT` order linked to the session):
+
+1. The client picks a product (numbered options) and, if it has steps, the ingredients.
+2. The bot asks (through the AI) for the **quantity**, the **customer name**, the **delivery address** and the
+   **payment type**.
+3. When all data is collected, the **total** is computed (`unit_price * quantity`), the order is marked
+   `PLACED` and a summary is sent to the client.
 
 ### Stores and product filtering
 

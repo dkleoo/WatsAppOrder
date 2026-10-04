@@ -1,5 +1,6 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
+import com.example.watsapporderservices.data.enum.OrderStatus
 import com.example.watsapporderservices.data.enum.SessionState
 import com.example.watsapporderservices.data.mapper.ProductResponse
 import com.example.watsapporderservices.data.mapper.StoreResponse
@@ -7,12 +8,14 @@ import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
 import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.domain.repository.AiRepository
 import com.example.watsapporderservices.domain.repository.MessageRepository
+import com.example.watsapporderservices.domain.repository.OrderRepository
 import com.example.watsapporderservices.domain.repository.ProductRepository
 import com.example.watsapporderservices.domain.repository.SessionRepository
 import com.example.watsapporderservices.domain.repository.StoreRepository
 import com.example.watsapporderservices.domain.repository.WebhookRepository
 import com.example.watsapporderservices.domain.usecase.AiResult
 import com.example.watsapporderservices.domain.usecase.MessageResult
+import com.example.watsapporderservices.domain.usecase.OrderDraft
 import com.example.watsapporderservices.domain.usecase.SessionInfo
 import com.example.watsapporderservices.domain.usecase.WebhookResult
 import com.example.watsapporderservices.domain.usecase.WebhookStatus
@@ -27,8 +30,14 @@ private const val MESSAGES_FIELD = "messages"
 private const val TEXT_MESSAGE_TYPE = "text"
 private const val MAX_REPLY_LENGTH = 4096
 private const val MAX_TRACKED_MESSAGE_IDS = 1000
-private const val AI_NOT_CONFIGURED_REPLY = "El asistente automático no está disponible en este momento."
-private const val AI_FAILED_REPLY = "Lo siento, no pude procesar tu mensaje. Intenta de nuevo en un momento."
+private const val QUESTION_SYSTEM_PROMPT =
+    "Eres el asistente de pedidos de una tienda por WhatsApp. Devuelve SOLO una pregunta breve y clara, " +
+        "sin listar productos y sin inventar datos."
+
+private val STORE_INFO_KEYWORDS = listOf(
+    "direccion", "dirección", "donde", "dónde", "ubicacion", "ubicación",
+    "telefono", "teléfono", "contacto", "whatsapp",
+)
 
 class WebhookRepositoryImpl(
     private val config: WhatsAppConfig,
@@ -37,6 +46,7 @@ class WebhookRepositoryImpl(
     private val storeRepository: StoreRepository,
     private val productRepository: ProductRepository,
     private val sessionRepository: SessionRepository,
+    private val orderRepository: OrderRepository,
 ) : WebhookRepository {
     private val logger = LoggerFactory.getLogger(WebhookRepositoryImpl::class.java)
     private val processedMessageIds = ConcurrentHashMap.newKeySet<String>()
@@ -79,7 +89,7 @@ class WebhookRepositoryImpl(
             if (!markProcessed(incoming.id)) return@forEach
 
             val session = sessionRepository.resume(incoming.from, store?.id)
-            val reply = buildReply(store, business, session, incoming.text)
+            val reply = handleConversation(store, business, session, incoming.text)
 
             when (val sent = messageRepository.sendText(incoming.from, reply.take(MAX_REPLY_LENGTH))) {
                 is MessageResult.Sent -> {
@@ -95,86 +105,208 @@ class WebhookRepositoryImpl(
         }
     }
 
-    private suspend fun buildReply(
+    private suspend fun handleConversation(
         store: StoreResponse?,
         business: BusinessNumbers,
         session: SessionInfo,
         text: String,
     ): String {
-        val welcome = if (session.isNew && store != null) "${store.welcomeMessage}\n\n" else ""
-
-        val selectedOption = text.trim().toIntOrNull()
-        if (session.state == SessionState.SELECTING_PRODUCT &&
-            selectedOption != null &&
-            selectedOption in 1..session.optionProductIds.size
-        ) {
-            val product = productRepository.getProduct(session.optionProductIds[selectedOption - 1])
-            sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
-            return if (product != null) {
-                "${welcome}¡Perfecto! Elegiste ${describe(product)}. ¿Confirmas tu pedido?"
-            } else {
-                "${welcome}No pude encontrar esa opción. ¿Podrías decirme de nuevo qué deseas?"
-            }
+        val welcome = if (session.isNew) store?.let { initialGreeting(it) } ?: "" else ""
+        return when (session.state) {
+            SessionState.IDLE -> handleIdle(store, business, session, text, welcome)
+            SessionState.SELECTING_PRODUCT -> handleProductSelection(store, session, text, welcome)
+            SessionState.SELECTING_INGREDIENTS -> handleIngredients(session, text)
+            SessionState.AWAITING_QUANTITY -> handleQuantity(session, text)
+            SessionState.AWAITING_NAME -> handleName(session, text)
+            SessionState.AWAITING_ADDRESS -> handleAddress(session, text)
+            SessionState.AWAITING_PAYMENT -> handlePayment(session, text)
         }
+    }
 
-        val matching = productRepository.searchByStore(business.phone, business.idWhatsApp, text)
+    private suspend fun handleIdle(
+        store: StoreResponse?,
+        business: BusinessNumbers,
+        session: SessionInfo,
+        text: String,
+        welcome: String,
+    ): String {
+        if (!session.isNew && store != null && asksForStoreInfo(text)) return storeInfo(store)
+
+        val products = productRepository.searchByStore(business.phone, business.idWhatsApp, text)
         return when {
-            matching.size > 1 -> {
-                sessionRepository.saveState(
-                    session.id,
-                    session.storeId,
-                    SessionState.SELECTING_PRODUCT,
-                    matching.map { it.id },
-                )
-                welcome + buildOptions(matching)
+            products.size > 1 -> {
+                saveState(session, SessionState.SELECTING_PRODUCT, products.map { it.id })
+                "${welcome}Encontré varias opciones:\n${buildOptions(products)}\nResponde con el número de la que deseas."
             }
 
-            matching.size == 1 -> {
-                sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
-                "${welcome}Encontré ${describe(matching.single())}. ¿Deseas pedirlo? (responde *sí* o *no*)"
-            }
+            products.size == 1 -> startProduct(store, session, products.single())
 
             else -> {
-                sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
                 val menu = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
-                when (val result = aiRepository.reply(buildOrderAssistantPrompt(store, menu), text)) {
-                    is AiResult.Reply -> welcome + result.text
-                    AiResult.NotConfigured -> welcome + AI_NOT_CONFIGURED_REPLY
-                    is AiResult.Failed -> {
-                        logger.warn("Groq reply failed: {}", result.detail)
-                        registerFailure("groq: ${result.detail}")
-                        welcome + AI_FAILED_REPLY
-                    }
+                if (menu.isEmpty()) {
+                    "$welcome No encontré productos disponibles en esta tienda."
+                } else {
+                    saveState(session, SessionState.SELECTING_PRODUCT, menu.map { it.id })
+                    "${welcome}No encontré \"$text\". Estos son los productos disponibles:\n" +
+                        "${buildOptions(menu)}\nResponde con el número de la que deseas."
                 }
             }
         }
     }
 
-    private fun buildOrdersText(store: StoreResponse?): String = buildString {
-        append("Eres el asistente de pedidos de una tienda por WhatsApp. ")
-        append("Tu tarea es tomar pedidos: pregunta qué desea ordenar y ayúdalo a elegir. ")
-        if (store != null) append("Tienda -> dirección: ${store.address}; teléfono: ${store.phone}. ")
+    private suspend fun handleProductSelection(
+        store: StoreResponse?,
+        session: SessionInfo,
+        text: String,
+        welcome: String,
+    ): String {
+        val index = text.trim().toIntOrNull()
+        if (index == null || index !in 1..session.optionProductIds.size) {
+            return "${welcome}Responde con el número de una de las opciones."
+        }
+        val product = productRepository.getProduct(session.optionProductIds[index - 1])
+            ?: return "${welcome}No pude encontrar esa opción, intenta de nuevo."
+        return startProduct(store, session, product)
     }
 
-    private fun buildOrderAssistantPrompt(store: StoreResponse?, products: List<ProductResponse>): String =
-        buildString {
-            append(buildOrdersText(store))
-            if (products.isNotEmpty()) {
-                append("Productos disponibles: ")
-                products.forEach { append("${it.name} ($ ${it.price}); ") }
-            }
-            append("Usa SOLO esos productos y precios y no inventes otros. Responde breve, en el idioma del cliente.")
+    private suspend fun startProduct(store: StoreResponse?, session: SessionInfo, product: ProductResponse): String {
+        val created = orderRepository.createDraft(store?.id, session.customerPhone)
+        val order = orderRepository.save(
+            created.copy(
+                productId = product.id,
+                productName = product.name,
+                unitPrice = product.price,
+                status = OrderStatus.DRAFT,
+            ),
+        )
+
+        val inputs = product.steps.flatMap { it.inputs }
+        if (inputs.isNotEmpty()) {
+            saveState(session, SessionState.SELECTING_INGREDIENTS, inputs.map { it.id }, order.id)
+            val list = inputs.mapIndexed { i, input -> "${i + 1}. ${input.name}" }.joinToString("\n")
+            return "Elegiste ${product.name}. ¿Con qué ingredientes lo deseas?\n$list\n" +
+                "Responde con los números (ej: 1,3)."
         }
 
-    private fun buildOptions(products: List<ProductResponse>): String = buildString {
-        append("Encontré varias opciones, responde con el número de la que deseas:\n")
-        products.forEachIndexed { index, product -> append("${index + 1}. ${describe(product)}\n") }
+        saveState(session, SessionState.AWAITING_QUANTITY, emptyList(), order.id)
+        return "Elegiste ${product.name} ($ ${product.price}).\n" +
+            ask("pide la cantidad que desea", "¿Cuántos deseas?")
     }
+
+    private suspend fun handleIngredients(session: SessionInfo, text: String): String {
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val chosen = parseNumbers(text).mapNotNull { n -> session.optionProductIds.getOrNull(n - 1) }
+        if (chosen.isEmpty()) {
+            return "Responde con los números de los ingredientes (ej: 1,3)."
+        }
+        orderRepository.save(order.copy(selectedInputIds = chosen.distinct()))
+        saveState(session, SessionState.AWAITING_QUANTITY, emptyList(), order.id)
+        return ask("pide la cantidad que desea", "¿Cuántos deseas?")
+    }
+
+    private suspend fun handleQuantity(session: SessionInfo, text: String): String {
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val quantity = parseNumbers(text).firstOrNull()
+        if (quantity == null) return "Indícame un número. ¿Cuántos deseas?"
+        if (quantity <= 0) return "La cantidad debe ser mayor a 0. ¿Cuántos deseas?"
+        orderRepository.save(order.copy(quantity = quantity))
+        saveState(session, SessionState.AWAITING_NAME, emptyList(), order.id)
+        return ask("pide el nombre de la persona que recibe el pedido", "¿A nombre de quién es el pedido?")
+    }
+
+    private suspend fun handleName(session: SessionInfo, text: String): String {
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val name = text.trim().take(160)
+        if (name.isBlank()) return "¿A nombre de quién es el pedido?"
+        orderRepository.save(order.copy(customerName = name))
+        saveState(session, SessionState.AWAITING_ADDRESS, emptyList(), order.id)
+        return ask("pide la dirección de entrega", "¿Cuál es la dirección de entrega?")
+    }
+
+    private suspend fun handleAddress(session: SessionInfo, text: String): String {
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val address = text.trim().take(300)
+        if (address.isBlank()) return "¿Cuál es la dirección de entrega?"
+        orderRepository.save(order.copy(deliveryAddress = address))
+        saveState(session, SessionState.AWAITING_PAYMENT, emptyList(), order.id)
+        return ask(
+            "pide el tipo de pago (efectivo, transferencia, tarjeta, etc.)",
+            "¿Cómo deseas pagar? (efectivo, transferencia, tarjeta...)",
+        )
+    }
+
+    private suspend fun handlePayment(session: SessionInfo, text: String): String {
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val payment = text.trim().take(60)
+        if (payment.isBlank()) return "¿Cómo deseas pagar? (efectivo, transferencia, tarjeta...)"
+
+        val total = (order.unitPrice ?: 0.0) * (order.quantity ?: 0)
+        val placed = orderRepository.save(
+            order.copy(paymentType = payment, total = total, status = OrderStatus.PLACED),
+        )
+        saveState(session, SessionState.IDLE, emptyList(), null)
+        return buildOrderSummary(placed)
+    }
+
+    private suspend fun loadOrder(session: SessionInfo): OrderDraft? =
+        session.orderId?.let { orderRepository.getOrder(it) }
+
+    private suspend fun restartOrder(session: SessionInfo, message: String): String {
+        saveState(session, SessionState.IDLE, emptyList(), null)
+        return "$message ¿Qué deseas ordenar?"
+    }
+
+    private suspend fun saveState(
+        session: SessionInfo,
+        state: SessionState,
+        options: List<Int>,
+        orderId: Int? = session.orderId,
+    ) {
+        sessionRepository.saveState(session.id, session.storeId, state, options, orderId)
+    }
+
+    private suspend fun ask(instruction: String, fallback: String): String =
+        when (val result = aiRepository.reply("$QUESTION_SYSTEM_PROMPT Pídele: $instruction.", "Genera la pregunta.")) {
+            is AiResult.Reply -> result.text.takeIf { it.isNotBlank() } ?: fallback
+            AiResult.NotConfigured -> fallback
+            is AiResult.Failed -> {
+                registerFailure("groq: ${result.detail}")
+                fallback
+            }
+        }
+
+    private fun initialGreeting(store: StoreResponse): String =
+        "${store.welcomeMessage}\n\n📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}\n\n¿Qué deseas ordenar?"
+
+    private fun storeInfo(store: StoreResponse): String =
+        "📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}"
+
+    private fun asksForStoreInfo(text: String): Boolean {
+        val normalized = text.lowercase()
+        return STORE_INFO_KEYWORDS.any { normalized.contains(it) }
+    }
+
+    private fun buildOptions(products: List<ProductResponse>): String =
+        products.mapIndexed { index, product -> "${index + 1}. ${describe(product)}" }.joinToString("\n")
 
     private fun describe(product: ProductResponse): String {
         val quantity = product.quantity
         return "${product.name} ($ ${product.price})${if (quantity > 0) " - disponibles: $quantity" else ""}"
     }
+
+    private fun buildOrderSummary(order: OrderDraft): String = buildString {
+        append("✅ ¡Pedido registrado!\n\n")
+        append("Producto: ${order.productName}\n")
+        append("Cantidad: ${order.quantity}\n")
+        append("Total: $ ${order.total}\n")
+        append("Nombre: ${order.customerName}\n")
+        append("Dirección: ${order.deliveryAddress}\n")
+        append("Pago: ${order.paymentType}\n\n")
+        append("¡Gracias por tu compra!")
+    }
+
+    private fun parseNumbers(text: String): List<Int> =
+        Regex("\\d+").findAll(text).map { it.value.toInt() }.toList()
 
     private fun registerFailure(detail: String) {
         failed.incrementAndGet()

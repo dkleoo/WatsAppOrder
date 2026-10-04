@@ -6,6 +6,7 @@ data class SessionInfo(
     val id: Int,
     val customerPhone: String,
     val storeId: Int?,
+    val orderId: Int?,
     val state: SessionState,
     val optionProductIds: List<Int>,
     val lastActivityAt: Long,

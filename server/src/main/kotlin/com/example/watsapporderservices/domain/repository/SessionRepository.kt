@@ -7,5 +7,11 @@ interface SessionRepository {
     /** Resumes the customer's session, or starts a new one if it expired (2 minutes without messages). */
     suspend fun resume(customerPhone: String, storeId: Int?): SessionInfo
 
-    suspend fun saveState(sessionId: Int, storeId: Int?, state: SessionState, optionProductIds: List<Int>)
+    suspend fun saveState(
+        sessionId: Int,
+        storeId: Int?,
+        state: SessionState,
+        optionProductIds: List<Int>,
+        orderId: Int?,
+    )
 }

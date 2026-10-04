@@ -1,5 +1,6 @@
 package com.example.watsapporderservices.data.database.session
 
+import com.example.watsapporderservices.data.database.order.Orders
 import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.enum.SessionState
 import org.jetbrains.exposed.v1.core.Table
@@ -12,6 +13,7 @@ object Sessions : Table("sessions") {
     val id = integer("id").autoIncrement()
     val customerPhone = varchar("customer_phone", CUSTOMER_PHONE_MAX_LENGTH).uniqueIndex()
     val storeId = integer("store_id").references(Stores.id).nullable()
+    val orderId = integer("order_id").references(Orders.id).nullable()
     val state = enumerationByName("state", SESSION_STATE_MAX_LENGTH, SessionState::class)
     val optionIds = varchar("options", SESSION_OPTIONS_MAX_LENGTH).nullable()
     val lastActivityAt = long("last_activity_at")
@@ -23,6 +25,7 @@ data class SessionEntity(
     val id: Int,
     val customerPhone: String,
     val storeId: Int?,
+    val orderId: Int?,
     val state: SessionState,
     val optionProductIds: List<Int>,
     val lastActivityAt: Long,

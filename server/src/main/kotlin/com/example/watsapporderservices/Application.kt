@@ -15,12 +15,14 @@ import com.example.watsapporderservices.data.security.PasswordHasher
 import com.example.watsapporderservices.data.security.TokenService
 import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.data.database.input.InputDao
+import com.example.watsapporderservices.data.database.order.OrderDao
 import com.example.watsapporderservices.data.database.product.ProductDao
 import com.example.watsapporderservices.data.database.session.SessionDao
 import com.example.watsapporderservices.data.database.step.StepDao
 import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.user.UserDao
+import com.example.watsapporderservices.data.repositoryImpl.OrderRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.SessionRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.StoreRepositoryImpl
@@ -75,6 +77,7 @@ fun Application.module() {
     val storeRepository = StoreRepositoryImpl(storeDao)
     val productRepository = ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao)
     val sessionRepository = SessionRepositoryImpl(SessionDao())
+    val orderRepository = OrderRepositoryImpl(OrderDao())
     val webhookUseCase = WebhookUseCase(
         WebhookRepositoryImpl(
             whatsAppConfig,
@@ -83,6 +86,7 @@ fun Application.module() {
             storeRepository,
             productRepository,
             sessionRepository,
+            orderRepository,
         ),
     )
     val messageUseCase = MessageUseCase(messageRepository)
