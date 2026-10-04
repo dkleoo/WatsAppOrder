@@ -153,7 +153,8 @@ Store endpoints:
 
 `whatsappBusinessPhone` is stored as digits (so it matches the webhook's `display_phone_number`).
 `productIds` links the given products to the store (the `store_products` table).
-Creating a store with an existing `whatsappBusinessPhone` or `idWhatsApp` returns `409 store_already_exists`.
+Creating a store (`POST /stores`) requires `Authorization: Bearer <jwt>` and links the store to the authenticated
+user. Creating a store with an existing `whatsappBusinessPhone` or `idWhatsApp` returns `409 store_already_exists`.
 
 ```sh
 curl -X POST http://localhost:8080/stores \
@@ -184,16 +185,24 @@ is more than one match.
 
 ### Creating products
 
-`POST /products` (create) now **requires** `storeId` and always links the product to that store in
-`store_products`. Without `storeId` it returns `400 invalid_store_id`; if the store does not exist it returns
-`400 store_not_found`. `PUT /products/{id}` updates the product and `DELETE /products/{id}` also removes its
-store links.
+The store is **not sent by the client**: `POST /products` requires the `Authorization: Bearer <jwt>` token and
+uses the store linked to the authenticated user (set when the user creates their store). The product is always
+linked to that store in `store_products`.
+
+- No token → `401 unauthorized`.
+- The user has no store → `400 store_not_configured`.
 
 ```sh
 curl -X POST http://localhost:8080/products \
+  -H "Authorization: Bearer <jwt>" \
   -H "Content-Type: application/json" \
-  -d '{"storeId":1,"name":"Coca cola","price":2000,"cost":0,"quantity":10,"type":"CREATED"}'
+  -d '{"name":"Coca cola","price":2000,"cost":0,"quantity":10,"type":"CREATED"}'
 ```
+
+`PUT /products/{id}` updates the product and `DELETE /products/{id}` also removes its store links.
+
+Creating a store (`POST /stores`) requires the same JWT and links the new store to the authenticated user, so
+their next product creations go to that store. The login/`/auth/me` response includes the user's `storeId`.
 
 ### Environment variables
 

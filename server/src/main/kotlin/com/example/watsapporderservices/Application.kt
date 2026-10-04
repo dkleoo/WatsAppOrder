@@ -61,8 +61,9 @@ fun Application.module() {
     if (!firebaseConfig.isConfigured) {
         log.warn("FIREBASE_PROJECT_ID is not set: /auth/federated will reject every token")
     }
+    val userDao = UserDao()
     val authRepository = AuthRepositoryImpl(
-        UserDao(),
+        userDao,
         PasswordHasher(),
         tokenService,
         FirebaseTokenVerifier(firebaseConfig.projectId),
@@ -76,9 +77,16 @@ fun Application.module() {
     val messageRepository = MessageRepositoryImpl(whatsAppConfig)
     val storeDao = StoreDao()
     val storeProductDao = StoreProductDao()
-    val storeRepository = StoreRepositoryImpl(storeDao, storeProductDao)
-    val productRepository =
-        ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao, storeProductDao)
+    val storeRepository = StoreRepositoryImpl(storeDao, storeProductDao, userDao)
+    val productRepository = ProductRepositoryImpl(
+        ProductDao(),
+        StepDao(),
+        StepInputDao(),
+        InputDao(),
+        storeDao,
+        storeProductDao,
+        userDao,
+    )
     val sessionRepository = SessionRepositoryImpl(SessionDao())
     val orderRepository = OrderRepositoryImpl(OrderDao())
     val webhookUseCase = WebhookUseCase(

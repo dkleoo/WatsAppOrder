@@ -15,7 +15,8 @@ class ProductUseCase(private val repository: ProductRepository) {
         query: String?,
     ): List<ProductResponse> = repository.searchByStore(whatsappBusinessPhone, idWhatsApp, query)
 
-    suspend fun saveProduct(request: ProductRequest): ProductResult = repository.saveProduct(request)
+    suspend fun saveProduct(userId: Int, request: ProductRequest): ProductResult =
+        repository.saveProduct(userId, request)
 
     suspend fun updateProduct(id: Int, request: ProductRequest): ProductResult =
         repository.updateProduct(id, request)

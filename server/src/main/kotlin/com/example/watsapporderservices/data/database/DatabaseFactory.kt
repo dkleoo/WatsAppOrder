@@ -55,6 +55,7 @@ object DatabaseFactory {
     private fun JdbcTransaction.migrateUsers() {
         exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid VARCHAR($FIREBASE_UID_MAX_LENGTH)")
         exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_provider VARCHAR($AUTH_PROVIDER_MAX_LENGTH)")
+        exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS store_id INT")
         exec("CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique ON users (firebase_uid)")
     }
 }

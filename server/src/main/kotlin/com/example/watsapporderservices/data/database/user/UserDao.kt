@@ -32,7 +32,7 @@ class UserDao {
             it[Users.passwordHash] = passwordHash
             it[Users.createdAt] = createdAt
         } get Users.id
-        UserEntity(id, email, name, passwordHash, null, null, createdAt)
+        UserEntity(id, email, name, passwordHash, null, null, null, createdAt)
     }
 
     fun createFederated(
@@ -51,7 +51,7 @@ class UserDao {
             it[Users.authProvider] = authProvider
             it[Users.createdAt] = createdAt
         } get Users.id
-        UserEntity(id, email, name, passwordHash, firebaseUid, authProvider, createdAt)
+        UserEntity(id, email, name, passwordHash, firebaseUid, authProvider, null, createdAt)
     }
 
     fun linkFederation(
@@ -69,6 +69,10 @@ class UserDao {
         }
         Users.selectAll().where { Users.id eq id }.single().toEntity()
     }
+
+    fun updateStoreId(id: Int, storeId: Int) = transaction {
+        Users.update({ Users.id eq id }) { it[Users.storeId] = storeId }
+    }
 }
 
 private fun ResultRow.toEntity(): UserEntity = UserEntity(
@@ -78,5 +82,6 @@ private fun ResultRow.toEntity(): UserEntity = UserEntity(
     passwordHash = this[Users.passwordHash],
     firebaseUid = this[Users.firebaseUid],
     authProvider = this[Users.authProvider],
+    storeId = this[Users.storeId],
     createdAt = this[Users.createdAt],
 )

@@ -16,8 +16,8 @@ interface ProductRepository {
         query: String?,
     ): List<ProductResponse>
 
-    /** Creates (linking to `storeId`) or updates a product. */
-    suspend fun saveProduct(request: ProductRequest): ProductResult
+    /** Creates the product linked to the authenticated user's store, or updates it when [ProductRequest.id] is set. */
+    suspend fun saveProduct(userId: Int, request: ProductRequest): ProductResult
 
     suspend fun updateProduct(id: Int, request: ProductRequest): ProductResult
 

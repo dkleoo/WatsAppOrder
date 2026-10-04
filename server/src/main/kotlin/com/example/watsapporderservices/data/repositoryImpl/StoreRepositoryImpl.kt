@@ -3,6 +3,7 @@ package com.example.watsapporderservices.data.repositoryImpl
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.StoreEntity
 import com.example.watsapporderservices.data.database.store.StoreProductDao
+import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.enum.StoreErrorCode
 import com.example.watsapporderservices.data.mapper.StoreRequest
 import com.example.watsapporderservices.data.mapper.StoreResponse
@@ -15,6 +16,7 @@ import kotlinx.coroutines.withContext
 class StoreRepositoryImpl(
     private val storeDao: StoreDao,
     private val storeProductDao: StoreProductDao,
+    private val userDao: UserDao,
 ) : StoreRepository {
     override suspend fun findByWhatsapp(
         whatsappBusinessPhone: String?,
@@ -34,7 +36,7 @@ class StoreRepositoryImpl(
         storeDao.findById(id)?.let { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
     }
 
-    override suspend fun create(request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
+    override suspend fun create(userId: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
         val parsed = parse(request)
         if (parsed is Parsed.Invalid) return@withContext StoreResult.Invalid(parsed.code)
         val store = (parsed as Parsed.Ok).store
@@ -51,6 +53,8 @@ class StoreRepositoryImpl(
             idWhatsApp = store.idWhatsApp,
         )
         request.productIds?.let { storeProductDao.replace(created.id, it) }
+        // The authenticated user's active store is this one.
+        userDao.updateStoreId(userId, created.id)
         StoreResult.Success(created.toResponse(storeProductDao.productIdsByStoreId(created.id)))
     }
 

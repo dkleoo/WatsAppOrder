@@ -10,7 +10,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ProductRequest(
     val id: Int? = null,
-    val storeId: Int? = null,
     val name: String,
     val price: Double,
     val cost: Double,

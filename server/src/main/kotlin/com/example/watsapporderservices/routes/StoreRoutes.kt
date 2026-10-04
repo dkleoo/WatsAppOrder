@@ -1,13 +1,16 @@
 package com.example.watsapporderservices.routes
 
+import com.example.watsapporderservices.data.enum.AuthErrorCode
 import com.example.watsapporderservices.data.enum.StoreErrorCode
 import com.example.watsapporderservices.data.mapper.StoreRequest
 import com.example.watsapporderservices.data.mapper.toResponse
+import com.example.watsapporderservices.data.security.JWT_AUTH_NAME
 import com.example.watsapporderservices.domain.usecase.StoreResult
 import com.example.watsapporderservices.domain.usecase.StoreUseCase
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -36,8 +39,19 @@ fun Route.storeRoutes(useCase: StoreUseCase) {
             call.respond(store)
         }
 
-        post {
-            respondStoreResult(call, useCase.create(call.receive<StoreRequest>()), HttpStatusCode.Created)
+        authenticate(JWT_AUTH_NAME) {
+            post {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@post
+                }
+                respondStoreResult(
+                    call,
+                    useCase.create(userId, call.receive<StoreRequest>()),
+                    HttpStatusCode.Created,
+                )
+            }
         }
 
         put("/{id}") {

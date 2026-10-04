@@ -10,6 +10,7 @@ import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.StoreEntity
 import com.example.watsapporderservices.data.database.store.StoreProductDao
+import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.enum.ProductErrorCode
 import com.example.watsapporderservices.data.enum.ProductType
 import com.example.watsapporderservices.data.mapper.ProductRequest
@@ -43,6 +44,7 @@ class ProductRepositoryImpl(
     private val inputDao: InputDao,
     private val storeDao: StoreDao,
     private val storeProductDao: StoreProductDao,
+    private val userDao: UserDao,
 ) : ProductRepository {
     override suspend fun getProducts(): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
@@ -115,27 +117,30 @@ class ProductRepositoryImpl(
             .replace(NON_ALPHANUMERIC_REGEX, " ")
             .trim()
 
-    override suspend fun saveProduct(request: ProductRequest): ProductResult = withContext(Dispatchers.IO) {
-        transaction {
-            val price = BigDecimal.valueOf(request.price)
-            val cost = BigDecimal.valueOf(request.cost)
-            val product = if (request.id == null) {
-                val storeId = request.storeId
-                    ?: return@transaction ProductResult.Invalid(ProductErrorCode.INVALID_STORE_ID)
-                if (storeDao.findById(storeId) == null) return@transaction ProductResult.StoreNotFound
-                val created = productDao.insert(request.name, price, cost, request.quantity, request.type)
-                // Products must always belong to a store.
-                storeProductDao.link(storeId, created.id)
-                created
-            } else {
-                val updated = productDao.update(request.id, request.name, price, cost, request.quantity, request.type)
-                if (updated == 0) return@transaction ProductResult.ProductNotFound
-                ProductEntity(request.id, request.name, price, cost, request.quantity, request.type)
+    override suspend fun saveProduct(userId: Int, request: ProductRequest): ProductResult =
+        withContext(Dispatchers.IO) {
+            transaction {
+                val price = BigDecimal.valueOf(request.price)
+                val cost = BigDecimal.valueOf(request.cost)
+                val product = if (request.id == null) {
+                    // The store is not sent by the client: it comes from the authenticated user.
+                    val storeId = userDao.findById(userId)?.storeId
+                        ?: return@transaction ProductResult.Invalid(ProductErrorCode.STORE_NOT_CONFIGURED)
+                    if (storeDao.findById(storeId) == null) return@transaction ProductResult.StoreNotFound
+                    val created = productDao.insert(request.name, price, cost, request.quantity, request.type)
+                    // Products must always belong to a store.
+                    storeProductDao.link(storeId, created.id)
+                    created
+                } else {
+                    val updated =
+                        productDao.update(request.id, request.name, price, cost, request.quantity, request.type)
+                    if (updated == 0) return@transaction ProductResult.ProductNotFound
+                    ProductEntity(request.id, request.name, price, cost, request.quantity, request.type)
+                }
+                val saved = replaceSteps(product.id, request.type, request.steps)
+                ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
             }
-            val saved = replaceSteps(product.id, request.type, request.steps)
-            ProductResult.Success(product.toResponse(saved.steps, saved.inputsByStep))
         }
-    }
 
     override suspend fun updateProduct(id: Int, request: ProductRequest): ProductResult =
         withContext(Dispatchers.IO) {

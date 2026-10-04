@@ -1,12 +1,15 @@
 package com.example.watsapporderservices.routes
 
+import com.example.watsapporderservices.data.enum.AuthErrorCode
 import com.example.watsapporderservices.data.enum.ProductErrorCode
 import com.example.watsapporderservices.data.mapper.ProductRequest
 import com.example.watsapporderservices.data.mapper.toResponse
+import com.example.watsapporderservices.data.security.JWT_AUTH_NAME
 import com.example.watsapporderservices.domain.usecase.ProductResult
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -51,22 +54,29 @@ fun Route.productRoutes(useCase: ProductUseCase) {
             call.respond(product)
         }
 
-        post {
-            val request = call.receive<ProductRequest>()
-            when (val result = useCase.saveProduct(request)) {
-                is ProductResult.Success -> call.respond(
-                    if (request.id == null) HttpStatusCode.Created else HttpStatusCode.OK,
-                    result.product,
-                )
+        authenticate(JWT_AUTH_NAME) {
+            post {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@post
+                }
+                val request = call.receive<ProductRequest>()
+                when (val result = useCase.saveProduct(userId, request)) {
+                    is ProductResult.Success -> call.respond(
+                        if (request.id == null) HttpStatusCode.Created else HttpStatusCode.OK,
+                        result.product,
+                    )
 
-                is ProductResult.Invalid ->
-                    call.respond(HttpStatusCode.BadRequest, result.code.toResponse())
+                    is ProductResult.Invalid ->
+                        call.respond(HttpStatusCode.BadRequest, result.code.toResponse())
 
-                ProductResult.ProductNotFound ->
-                    call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
+                    ProductResult.ProductNotFound ->
+                        call.respond(HttpStatusCode.NotFound, ProductErrorCode.PRODUCT_NOT_FOUND.toResponse())
 
-                ProductResult.StoreNotFound ->
-                    call.respond(HttpStatusCode.BadRequest, ProductErrorCode.STORE_NOT_FOUND.toResponse())
+                    ProductResult.StoreNotFound ->
+                        call.respond(HttpStatusCode.BadRequest, ProductErrorCode.STORE_NOT_FOUND.toResponse())
+                }
             }
         }
 

@@ -38,6 +38,7 @@ data class UserResponse(
     val id: Int,
     val email: String,
     val name: String,
+    val storeId: Int? = null,
 )
 
 @Serializable
@@ -49,6 +50,7 @@ fun UserEntity.toResponse(): UserResponse = UserResponse(
     id = id,
     email = email,
     name = name,
+    storeId = storeId,
 )
 
 fun AuthErrorCode.toResponse(): ErrorResponse = ErrorResponse(code)
