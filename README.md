@@ -143,18 +143,19 @@ Store endpoints:
 
 | Method | Path           | Body |
 |--------|----------------|------|
-| POST   | `/stores`      | `{ "welcomeMessage": "...", "address": "...", "phone": "...", "whatsappBusinessPhone": "573138427026", "idWhatsApp": "1379699841884103" }` |
+| POST   | `/stores`      | `{ "welcomeMessage": "...", "address": "...", "phone": "...", "whatsappBusinessPhone": "573138427026", "idWhatsApp": "1379699841884103", "productIds": [1, 2] }` |
 | GET    | `/stores`      | - |
 | GET    | `/stores/{id}` | - |
-| PUT    | `/stores/{id}` | same body as POST |
+| PUT    | `/stores/{id}` | same body as POST (`productIds` optional; when present it replaces the store's products) |
 
 `whatsappBusinessPhone` is stored as digits (so it matches the webhook's `display_phone_number`).
+`productIds` links the given products to the store (the `store_products` table).
 Creating a store with an existing `whatsappBusinessPhone` or `idWhatsApp` returns `409 store_already_exists`.
 
 ```sh
 curl -X POST http://localhost:8080/stores \
   -H "Content-Type: application/json" \
-  -d '{"welcomeMessage":"¡Hola! Bienvenido a mi tienda","address":"Calle 1 #2-3","phone":"+57 300 0000000","whatsappBusinessPhone":"573138427026","idWhatsApp":"1379699841884103"}'
+  -d '{"welcomeMessage":"¡Hola! Bienvenido a mi tienda","address":"Calle 1 #2-3","phone":"+57 300 0000000","whatsappBusinessPhone":"573138427026","idWhatsApp":"1379699841884103","productIds":[1,2]}'
 
 curl http://localhost:8080/stores
 ```

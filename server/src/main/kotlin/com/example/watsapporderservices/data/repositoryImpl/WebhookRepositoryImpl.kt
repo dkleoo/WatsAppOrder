@@ -86,6 +86,9 @@ class WebhookRepositoryImpl(
 
         val business = extractBusiness(payload)
         val store = storeRepository.findByWhatsapp(business.phone, business.idWhatsApp)
+        if (store == null) {
+            logger.warn("No store configured for whatsapp {} / {}", business.phone, business.idWhatsApp)
+        }
         val messages = extractTextMessages(payload)
         receivedMessages.addAndGet(messages.size.toLong())
         logger.info("Webhook event received: {} text message(s)", messages.size)

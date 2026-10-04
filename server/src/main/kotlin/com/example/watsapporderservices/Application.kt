@@ -21,6 +21,7 @@ import com.example.watsapporderservices.data.database.session.SessionDao
 import com.example.watsapporderservices.data.database.step.StepDao
 import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.database.store.StoreDao
+import com.example.watsapporderservices.data.database.store.StoreProductDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.repositoryImpl.OrderRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
@@ -74,7 +75,8 @@ fun Application.module() {
     }
     val messageRepository = MessageRepositoryImpl(whatsAppConfig)
     val storeDao = StoreDao()
-    val storeRepository = StoreRepositoryImpl(storeDao)
+    val storeProductDao = StoreProductDao()
+    val storeRepository = StoreRepositoryImpl(storeDao, storeProductDao)
     val productRepository = ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao(), storeDao)
     val sessionRepository = SessionRepositoryImpl(SessionDao())
     val orderRepository = OrderRepositoryImpl(OrderDao())

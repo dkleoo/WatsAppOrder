@@ -2,6 +2,7 @@ package com.example.watsapporderservices.data.repositoryImpl
 
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.StoreEntity
+import com.example.watsapporderservices.data.database.store.StoreProductDao
 import com.example.watsapporderservices.data.enum.StoreErrorCode
 import com.example.watsapporderservices.data.mapper.StoreRequest
 import com.example.watsapporderservices.data.mapper.StoreResponse
@@ -13,6 +14,7 @@ import kotlinx.coroutines.withContext
 
 class StoreRepositoryImpl(
     private val storeDao: StoreDao,
+    private val storeProductDao: StoreProductDao,
 ) : StoreRepository {
     override suspend fun findByWhatsapp(
         whatsappBusinessPhone: String?,
@@ -21,15 +23,15 @@ class StoreRepositoryImpl(
         val phoneDigits = whatsappBusinessPhone?.filter { it.isDigit() }?.takeIf { it.isNotBlank() }
         val store = phoneDigits?.let { storeDao.findByWhatsappBusinessPhone(it) }
             ?: idWhatsApp?.takeIf { it.isNotBlank() }?.let { storeDao.findByIdWhatsApp(it) }
-        store?.toResponse()
+        store?.let { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
     }
 
     override suspend fun getStores(): List<StoreResponse> = withContext(Dispatchers.IO) {
-        storeDao.findAll().map { it.toResponse() }
+        storeDao.findAll().map { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
     }
 
     override suspend fun getStore(id: Int): StoreResponse? = withContext(Dispatchers.IO) {
-        storeDao.findById(id)?.toResponse()
+        storeDao.findById(id)?.let { it.toResponse(storeProductDao.productIdsByStoreId(it.id)) }
     }
 
     override suspend fun create(request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
@@ -48,7 +50,8 @@ class StoreRepositoryImpl(
             whatsappBusinessPhone = store.whatsappBusinessPhone,
             idWhatsApp = store.idWhatsApp,
         )
-        StoreResult.Success(created.toResponse())
+        request.productIds?.let { storeProductDao.replace(created.id, it) }
+        StoreResult.Success(created.toResponse(storeProductDao.productIdsByStoreId(created.id)))
     }
 
     override suspend fun update(id: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
@@ -71,15 +74,9 @@ class StoreRepositoryImpl(
             whatsappBusinessPhone = store.whatsappBusinessPhone,
             idWhatsApp = store.idWhatsApp,
         )
+        request.productIds?.let { storeProductDao.replace(id, it) }
         StoreResult.Success(
-            StoreResponse(
-                id = id,
-                welcomeMessage = store.welcomeMessage,
-                address = store.address,
-                phone = store.phone,
-                whatsappBusinessPhone = store.whatsappBusinessPhone,
-                idWhatsApp = store.idWhatsApp,
-            ),
+            store.copy(id = id).toResponse(storeProductDao.productIdsByStoreId(id)),
         )
     }
 
