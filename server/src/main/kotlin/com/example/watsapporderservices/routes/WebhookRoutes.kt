@@ -1,13 +1,17 @@
 package com.example.watsapporderservices.routes
 
+import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
 import com.example.watsapporderservices.domain.usecase.WebhookResult
 import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
+import io.ktor.server.request.receive
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+import kotlinx.coroutines.launch
 
 fun Route.webhookRoutes(useCase: WebhookUseCase) {
     get("/webhook") {
@@ -22,5 +26,12 @@ fun Route.webhookRoutes(useCase: WebhookUseCase) {
             WebhookResult.Rejected ->
                 call.respondText("Forbidden", ContentType.Text.Plain, HttpStatusCode.Forbidden)
         }
+    }
+
+    post("/webhook") {
+        val payload = call.receive<WhatsAppWebhookPayload>()
+        // Acknowledge Meta immediately and generate/send the AI reply in the background.
+        call.application.launch { useCase.handleEvent(payload) }
+        call.respondText("EVENT_RECEIVED", ContentType.Text.Plain, HttpStatusCode.OK)
     }
 }

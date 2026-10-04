@@ -91,7 +91,19 @@ Success (`200`):
 ```
 
 Errors: `400` for invalid `extension`/`number`/`message`, `503` when the access token or phone number id is not
-configured, `502` when the Graph API rejects the request.
+configured, `502` when the Graph API rejects the request (the response includes a `detail` field).
+
+### AI auto-reply (Groq)
+
+When `POST /webhook` receives an incoming WhatsApp text message, the server acknowledges Meta immediately and,
+in the background, asks the Groq model for a reply and sends it back through the same send logic used by
+`POST /messages`. The reply is sent to the message sender (`from`).
+
+- The API key is read from `TOKEN_GROK` (or `GROQ_API_KEY`).
+- Default model: `openai/gpt-oss-120b`, with `temperature=1`, `max_completion_tokens=2048`, `top_p=1` and
+  `reasoning_effort=medium` (all overridable with `GROQ_MODEL`, `GROQ_TEMPERATURE`,
+  `GROQ_MAX_COMPLETION_TOKENS`, `GROQ_TOP_P`, `GROQ_REASONING_EFFORT`).
+- Duplicate deliveries of the same Meta message id are ignored.
 
 ### Environment variables
 
@@ -111,6 +123,7 @@ configured, `502` when the Graph API rejects the request.
 | `WHATSAPP_ACCESS_TOKEN`  | - (required for `POST /messages`; alias `WHATAPP_PERMANT`) |
 | `WHATSAPP_BUSINESS_ACCOUNT_ID` | `1415775780434889` (WhatsApp Business Account id) |
 | `WHATSAPP_PHONE_NUMBER_ID` | `1379699841884103` (sender phone number id)  |
+| `TOKEN_GROK`             | - (required for the WhatsApp AI auto-reply)    |
 | `HOST` / `PORT`          | from `application.conf` (`ktor.deployment`)    |
 
 Database credentials are read **only** from environment variables; `application.conf` no longer contains a URL, user, or password.

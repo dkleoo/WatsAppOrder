@@ -2,12 +2,14 @@ package com.example.watsapporderservices
 
 import com.example.watsapporderservices.data.database.DatabaseConfig
 import com.example.watsapporderservices.data.database.DatabaseFactory
+import com.example.watsapporderservices.data.repositoryImpl.AiRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.AuthRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.InputRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.MessageRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImpl
 import com.example.watsapporderservices.data.security.FirebaseConfig
 import com.example.watsapporderservices.data.security.FirebaseTokenVerifier
+import com.example.watsapporderservices.data.security.GroqConfig
 import com.example.watsapporderservices.data.security.JwtConfig
 import com.example.watsapporderservices.data.security.PasswordHasher
 import com.example.watsapporderservices.data.security.TokenService
@@ -58,8 +60,13 @@ fun Application.module() {
     )
     val authUseCase = AuthUseCase(authRepository)
     val whatsAppConfig = WhatsAppConfig.from(environment.config, System.getenv())
-    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(whatsAppConfig))
-    val messageUseCase = MessageUseCase(MessageRepositoryImpl(whatsAppConfig))
+    val groqConfig = GroqConfig.from(environment.config, System.getenv())
+    if (!groqConfig.isConfigured) {
+        log.warn("TOKEN_GROK is not set: the WhatsApp auto-reply will not work")
+    }
+    val messageRepository = MessageRepositoryImpl(whatsAppConfig)
+    val webhookUseCase = WebhookUseCase(WebhookRepositoryImpl(whatsAppConfig, AiRepositoryImpl(groqConfig), messageRepository))
+    val messageUseCase = MessageUseCase(messageRepository)
     val productUseCase = ProductUseCase(ProductRepositoryImpl(ProductDao(), StepDao(), StepInputDao(), InputDao()))
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()

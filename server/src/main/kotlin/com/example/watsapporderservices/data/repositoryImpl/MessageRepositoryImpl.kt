@@ -53,7 +53,27 @@ class MessageRepositoryImpl(
             return MessageResult.NotConfigured
         }
 
-        val to = extension + number
+        return sendTo(extension + number, message)
+    }
+
+    override suspend fun sendText(to: String, message: String): MessageResult {
+        val toDigits = to.filter { it.isDigit() }
+        val text = message.trim()
+
+        if (toDigits.length !in MIN_NUMBER_DIGITS..MAX_NUMBER_DIGITS) {
+            return MessageResult.Invalid(MessageErrorCode.INVALID_NUMBER)
+        }
+        if (text.isEmpty() || text.length > MAX_MESSAGE_LENGTH) {
+            return MessageResult.Invalid(MessageErrorCode.INVALID_MESSAGE)
+        }
+        if (!config.isSendConfigured) {
+            return MessageResult.NotConfigured
+        }
+
+        return sendTo(toDigits, text)
+    }
+
+    private suspend fun sendTo(to: String, message: String): MessageResult {
         val payload = json.encodeToString(
             WhatsAppTextPayload.serializer(),
             WhatsAppTextPayload(to = to, text = WhatsAppTextBody(message)),
