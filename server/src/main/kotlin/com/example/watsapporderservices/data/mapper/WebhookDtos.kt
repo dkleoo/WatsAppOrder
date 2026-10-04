@@ -1,7 +1,27 @@
 package com.example.watsapporderservices.data.mapper
 
+import com.example.watsapporderservices.domain.usecase.WebhookStatus
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class WebhookStatusResponse(
+    val receivedEvents: Long,
+    val receivedMessages: Long,
+    val replied: Long,
+    val failed: Long,
+    val lastActivityEpochMs: Long? = null,
+    val lastError: String? = null,
+)
+
+fun WebhookStatus.toResponse(): WebhookStatusResponse = WebhookStatusResponse(
+    receivedEvents = receivedEvents,
+    receivedMessages = receivedMessages,
+    replied = replied,
+    failed = failed,
+    lastActivityEpochMs = lastActivityEpochMs,
+    lastError = lastError,
+)
 
 @Serializable
 data class WhatsAppWebhookPayload(

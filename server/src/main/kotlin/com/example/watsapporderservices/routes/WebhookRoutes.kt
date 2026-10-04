@@ -1,12 +1,14 @@
 package com.example.watsapporderservices.routes
 
 import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
+import com.example.watsapporderservices.data.mapper.toResponse
 import com.example.watsapporderservices.domain.usecase.WebhookResult
 import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
 import io.ktor.server.request.receive
+import io.ktor.server.response.respond
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
@@ -26,6 +28,10 @@ fun Route.webhookRoutes(useCase: WebhookUseCase) {
             WebhookResult.Rejected ->
                 call.respondText("Forbidden", ContentType.Text.Plain, HttpStatusCode.Forbidden)
         }
+    }
+
+    get("/webhook/status") {
+        call.respond(useCase.status().toResponse())
     }
 
     post("/webhook") {

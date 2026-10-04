@@ -8,9 +8,12 @@ import com.example.watsapporderservices.domain.repository.WebhookRepository
 import com.example.watsapporderservices.domain.usecase.AiResult
 import com.example.watsapporderservices.domain.usecase.MessageResult
 import com.example.watsapporderservices.domain.usecase.WebhookResult
+import com.example.watsapporderservices.domain.usecase.WebhookStatus
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 private const val SUBSCRIBE_MODE = "subscribe"
 private const val MESSAGES_FIELD = "messages"
@@ -28,6 +31,13 @@ class WebhookRepositoryImpl(
     private val logger = LoggerFactory.getLogger(WebhookRepositoryImpl::class.java)
     private val processedMessageIds = ConcurrentHashMap.newKeySet<String>()
 
+    private val receivedEvents = AtomicLong()
+    private val receivedMessages = AtomicLong()
+    private val replied = AtomicLong()
+    private val failed = AtomicLong()
+    private val lastActivity = AtomicLong()
+    private val lastError = AtomicReference<String?>(null)
+
     override suspend fun verify(mode: String?, token: String?, challenge: String?): WebhookResult {
         if (mode != SUBSCRIBE_MODE) return WebhookResult.Rejected
         if (challenge.isNullOrEmpty()) return WebhookResult.Rejected
@@ -36,8 +46,24 @@ class WebhookRepositoryImpl(
         return WebhookResult.Verified(challenge)
     }
 
+    override fun status(): WebhookStatus = WebhookStatus(
+        receivedEvents = receivedEvents.get(),
+        receivedMessages = receivedMessages.get(),
+        replied = replied.get(),
+        failed = failed.get(),
+        lastActivityEpochMs = lastActivity.get().takeIf { it > 0 },
+        lastError = lastError.get(),
+    )
+
     override suspend fun handleEvent(payload: WhatsAppWebhookPayload) {
-        extractTextMessages(payload).forEach { incoming ->
+        receivedEvents.incrementAndGet()
+        lastActivity.set(System.currentTimeMillis())
+
+        val messages = extractTextMessages(payload)
+        receivedMessages.addAndGet(messages.size.toLong())
+        logger.info("Webhook event received: {} text message(s)", messages.size)
+
+        messages.forEach { incoming ->
             if (!markProcessed(incoming.id)) return@forEach
 
             val reply = when (val result = aiRepository.reply(incoming.text)) {
@@ -45,15 +71,28 @@ class WebhookRepositoryImpl(
                 AiResult.NotConfigured -> AI_NOT_CONFIGURED_REPLY
                 is AiResult.Failed -> {
                     logger.warn("Groq reply failed for {}: {}", incoming.from, result.detail)
+                    registerFailure("groq: ${result.detail}")
                     AI_FAILED_REPLY
                 }
             }
 
             when (val sent = messageRepository.sendText(incoming.from, reply.take(MAX_REPLY_LENGTH))) {
-                is MessageResult.Sent -> logger.info("Auto-reply sent to {} ({})", incoming.from, sent.messageId)
-                else -> logger.warn("Auto-reply to {} failed: {}", incoming.from, sent)
+                is MessageResult.Sent -> {
+                    replied.incrementAndGet()
+                    logger.info("Auto-reply sent to {} ({})", incoming.from, sent.messageId)
+                }
+
+                else -> {
+                    logger.warn("Auto-reply to {} failed: {}", incoming.from, sent)
+                    registerFailure("send: $sent")
+                }
             }
         }
+    }
+
+    private fun registerFailure(detail: String) {
+        failed.incrementAndGet()
+        lastError.set(detail)
     }
 
     private fun extractTextMessages(payload: WhatsAppWebhookPayload): List<IncomingTextMessage> =
