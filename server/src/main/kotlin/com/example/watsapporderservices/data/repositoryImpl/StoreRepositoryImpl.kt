@@ -37,6 +37,10 @@ class StoreRepositoryImpl(
         storeDao.findById(id)?.toResponse()
     }
 
+    override suspend fun getStoreByUser(userId: Int): StoreResponse? = withContext(Dispatchers.IO) {
+        storeDao.findByUserId(userId)?.toResponse()
+    }
+
     override suspend fun create(userId: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {
         transaction {
             val existing = storeDao.findByUserId(userId)

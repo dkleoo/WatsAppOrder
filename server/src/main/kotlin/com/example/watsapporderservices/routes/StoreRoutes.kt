@@ -25,6 +25,20 @@ fun Route.storeRoutes(useCase: StoreUseCase) {
             call.respond(useCase.getStores())
         }
 
+        get("/user/{userId}") {
+            val userId = call.parameters["userId"]?.toIntOrNull()
+            if (userId == null) {
+                call.respond(HttpStatusCode.BadRequest, StoreErrorCode.INVALID_STORE_ID.toResponse())
+                return@get
+            }
+            val store = useCase.getStoreByUser(userId)
+            if (store == null) {
+                call.respond(HttpStatusCode.NotFound, StoreErrorCode.STORE_NOT_FOUND.toResponse())
+                return@get
+            }
+            call.respond(store)
+        }
+
         get("/{id}") {
             val id = call.parameters["id"]?.toIntOrNull()
             if (id == null) {

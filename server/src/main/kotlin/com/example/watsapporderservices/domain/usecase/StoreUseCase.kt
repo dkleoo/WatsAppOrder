@@ -12,6 +12,8 @@ class StoreUseCase(private val repository: StoreRepository) {
 
     suspend fun getStore(id: Int): StoreResponse? = repository.getStore(id)
 
+    suspend fun getStoreByUser(userId: Int): StoreResponse? = repository.getStoreByUser(userId)
+
     suspend fun create(userId: Int, request: StoreRequest): StoreResult = repository.create(userId, request)
 
     suspend fun update(id: Int, request: StoreRequest): StoreResult = repository.update(id, request)

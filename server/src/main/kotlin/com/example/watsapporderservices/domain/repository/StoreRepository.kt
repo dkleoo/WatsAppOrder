@@ -11,6 +11,8 @@ interface StoreRepository {
 
     suspend fun getStore(id: Int): StoreResponse?
 
+    suspend fun getStoreByUser(userId: Int): StoreResponse?
+
     suspend fun create(userId: Int, request: StoreRequest): StoreResult
 
     suspend fun update(id: Int, request: StoreRequest): StoreResult
