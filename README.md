@@ -115,6 +115,9 @@ The conversation is stateful per customer through the `sessions` table:
   invent products: if there is more than one match, the bot replies with a **numbered list** and resolves the
   client's numeric choice deterministically. If there is no match, it lists the store's menu.
 - If the selected product has **steps/ingredients**, the bot lists them and asks which ones are wanted.
+- The opening message also tells the client that they can type **`mi catálogo`** at any time to see all products;
+  that keyword (and `catálogo`, `menu`, `qué venden`, ...) returns the catalog as a numbered list. It uses the
+  products endpoint and, if the store has no linked products, falls back to all products.
 
 ### Orders
 
@@ -159,6 +162,9 @@ curl -X POST http://localhost:8080/stores \
 
 curl http://localhost:8080/stores
 ```
+
+`GET /products/catalog` returns the store's full catalog (all its products). If the store is not identified or has
+no linked products, it falls back to **all products**, so the client always sees something.
 
 `GET /products/filter` returns the products of a store, looked up by its WhatsApp number, optionally filtered
 by name. The name filter is lenient: the query is split into significant words (ignoring articles like "una",

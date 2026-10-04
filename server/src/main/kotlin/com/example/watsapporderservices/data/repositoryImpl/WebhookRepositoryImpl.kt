@@ -44,6 +44,11 @@ private val GREETING_WORDS = listOf(
     "hey", "hi", "hello", "saludos", "que tal", "qué tal",
 )
 
+private val CATALOG_KEYWORDS = listOf(
+    "mi catalogo", "mi catálogo", "catalogo", "catálogo", "menu", "menú",
+    "que venden", "que vendes", "que tienen", "que tienes", "que hay",
+)
+
 class WebhookRepositoryImpl(
     private val config: WhatsAppConfig,
     private val aiRepository: AiRepository,
@@ -138,6 +143,10 @@ class WebhookRepositoryImpl(
     ): String {
         if (!session.isNew && store != null && asksForStoreInfo(text)) return storeInfo(store)
 
+        if (asksForCatalog(text)) {
+            return offerCatalog(business, session)
+        }
+
         if (isGreeting(text)) {
             return offerMenu(business, session)
         }
@@ -155,6 +164,14 @@ class WebhookRepositoryImpl(
         saveState(session, SessionState.SELECTING_PRODUCT, menu.map { it.id })
         return "¿Qué deseas ordenar? Estos son nuestros productos:\n${buildOptions(menu)}\n" +
             "Responde con el número de la que deseas."
+    }
+
+    private suspend fun offerCatalog(business: BusinessNumbers, session: SessionInfo): String {
+        val catalog = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
+        if (catalog.isEmpty()) return "Todavía no tenemos productos en el catálogo."
+        saveState(session, SessionState.SELECTING_PRODUCT, catalog.map { it.id })
+        return "Este es nuestro catálogo:\n${buildOptions(catalog)}\n" +
+            "Responde con el número de la que deseas ordenar."
     }
 
     private suspend fun menuAfterNoMatch(
@@ -295,7 +312,13 @@ class WebhookRepositoryImpl(
         }
 
     private fun initialGreeting(store: StoreResponse): String =
-        "${store.welcomeMessage}\n\n📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}"
+        "${store.welcomeMessage}\n\n📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}\n\n" +
+            "En cualquier momento escribe *mi catálogo* para ver todos nuestros productos."
+
+    private fun asksForCatalog(text: String): Boolean {
+        val normalized = text.lowercase().trim()
+        return CATALOG_KEYWORDS.any { normalized.contains(it) }
+    }
 
     private fun storeInfo(store: StoreResponse): String =
         "📍 Dirección: ${store.address}\n📞 Teléfono: ${store.phone}"

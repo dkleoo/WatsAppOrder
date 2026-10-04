@@ -63,8 +63,13 @@ class ProductRepositoryImpl(
         query: String?,
     ): List<ProductResponse> = withContext(Dispatchers.IO) {
         transaction {
-            val store = findStore(whatsappBusinessPhone, idWhatsApp) ?: return@transaction emptyList()
-            val products = matchProducts(productDao.findByStoreId(store.id), query)
+            val store = findStore(whatsappBusinessPhone, idWhatsApp)
+            // If there is no store, or the store has no linked products, fall back to the full catalog.
+            val candidates = store
+                ?.let { productDao.findByStoreId(it.id) }
+                ?.takeIf { it.isNotEmpty() }
+                ?: productDao.findAll()
+            val products = matchProducts(candidates, query)
             val stepsByProduct = stepDao.findByProductIds(products.map { it.id }).groupBy { it.productId }
             val inputsByStep = resolveInputsByStep(stepsByProduct.values.flatten().map { it.id })
             products.map { it.toResponse(stepsByProduct[it.id].orEmpty(), inputsByStep) }
