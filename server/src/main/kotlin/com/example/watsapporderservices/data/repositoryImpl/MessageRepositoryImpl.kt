@@ -48,6 +48,7 @@ class MessageRepositoryImpl(
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
+        explicitNulls = false
     }
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))

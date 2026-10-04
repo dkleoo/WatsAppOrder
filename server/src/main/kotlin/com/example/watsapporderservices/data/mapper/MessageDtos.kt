@@ -110,7 +110,6 @@ internal data class WhatsAppReplyRef(
 
 @Serializable
 internal data class WhatsAppInteractiveText(
-    val type: String = "text",
     val text: String,
 )
 
