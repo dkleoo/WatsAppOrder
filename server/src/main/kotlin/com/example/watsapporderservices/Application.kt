@@ -26,6 +26,7 @@ import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
 import com.example.watsapporderservices.domain.usecase.MessageUseCase
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
+import com.example.watsapporderservices.domain.usecase.StoreUseCase
 import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import com.example.watsapporderservices.plugins.configureSecurity
 import com.example.watsapporderservices.plugins.configureSerialization
@@ -34,6 +35,7 @@ import com.example.watsapporderservices.routes.authRoutes
 import com.example.watsapporderservices.routes.inputRoutes
 import com.example.watsapporderservices.routes.messageRoutes
 import com.example.watsapporderservices.routes.productRoutes
+import com.example.watsapporderservices.routes.storeRoutes
 import com.example.watsapporderservices.routes.webhookRoutes
 import io.ktor.server.application.Application
 import io.ktor.server.application.call
@@ -81,6 +83,7 @@ fun Application.module() {
     )
     val messageUseCase = MessageUseCase(messageRepository)
     val productUseCase = ProductUseCase(productRepository)
+    val storeUseCase = StoreUseCase(storeRepository)
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
     configureStatusPages()
@@ -89,6 +92,7 @@ fun Application.module() {
         authRoutes(authUseCase)
         webhookRoutes(webhookUseCase)
         messageRoutes(messageUseCase)
+        storeRoutes(storeUseCase)
         productRoutes(productUseCase)
         inputRoutes(inputUseCase)
     }

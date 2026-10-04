@@ -114,6 +114,26 @@ The `stores` table holds the per-store configuration: `id`, `welcome_message`, `
 Products are related to a store through the `store_products` table (`store_id`, `product_id`); this avoids
 altering the existing `products` table (no migration yet).
 
+Store endpoints:
+
+| Method | Path           | Body |
+|--------|----------------|------|
+| POST   | `/stores`      | `{ "welcomeMessage": "...", "address": "...", "phone": "...", "whatsappBusinessPhone": "573138427026", "idWhatsApp": "1379699841884103" }` |
+| GET    | `/stores`      | - |
+| GET    | `/stores/{id}` | - |
+| PUT    | `/stores/{id}` | same body as POST |
+
+`whatsappBusinessPhone` is stored as digits (so it matches the webhook's `display_phone_number`).
+Creating a store with an existing `whatsappBusinessPhone` or `idWhatsApp` returns `409 store_already_exists`.
+
+```sh
+curl -X POST http://localhost:8080/stores \
+  -H "Content-Type: application/json" \
+  -d '{"welcomeMessage":"¡Hola! Bienvenido a mi tienda","address":"Calle 1 #2-3","phone":"+57 300 0000000","whatsappBusinessPhone":"573138427026","idWhatsApp":"1379699841884103"}'
+
+curl http://localhost:8080/stores
+```
+
 `GET /products/filter` returns the products of a store, looked up by its WhatsApp number, optionally filtered
 by name:
 

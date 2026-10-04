@@ -1,7 +1,17 @@
 package com.example.watsapporderservices.data.mapper
 
 import com.example.watsapporderservices.data.database.store.StoreEntity
+import com.example.watsapporderservices.data.enum.StoreErrorCode
 import kotlinx.serialization.Serializable
+
+@Serializable
+data class StoreRequest(
+    val welcomeMessage: String? = null,
+    val address: String? = null,
+    val phone: String? = null,
+    val whatsappBusinessPhone: String? = null,
+    val idWhatsApp: String? = null,
+)
 
 @Serializable
 data class StoreResponse(
@@ -21,3 +31,5 @@ fun StoreEntity.toResponse(): StoreResponse = StoreResponse(
     whatsappBusinessPhone = whatsappBusinessPhone,
     idWhatsApp = idWhatsApp,
 )
+
+fun StoreErrorCode.toResponse(): ErrorResponse = ErrorResponse(code)
