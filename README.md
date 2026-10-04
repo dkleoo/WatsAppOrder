@@ -105,6 +105,16 @@ in the background, asks the Groq model for a reply and sends it back through the
   `GROQ_MAX_COMPLETION_TOKENS`, `GROQ_TOP_P`, `GROQ_REASONING_EFFORT`).
 - Duplicate deliveries of the same Meta message id are ignored.
 
+The conversation is stateful per customer through the `sessions` table:
+
+- The store's **welcome message is sent only once per session** (on the first reply).
+- If there are **no messages for 2 minutes**, the session resets: the state is cleared and the welcome message
+  is sent again on the next message.
+- When the client asks for a product, the server searches the store's products and, if there is **more than one
+  match, replies with a numbered list** of options and stores them in the session. The client answers with the
+  number and the product is resolved deterministically (no AI guessing).
+- If there is exactly one match it is offered directly; if there is none, the AI replies using the store's menu.
+
 ### Stores and product filtering
 
 The `stores` table holds the per-store configuration: `id`, `welcome_message`, `address`, `phone`,

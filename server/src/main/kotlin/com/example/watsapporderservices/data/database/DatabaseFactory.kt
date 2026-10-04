@@ -2,6 +2,7 @@ package com.example.watsapporderservices.data.database
 
 import com.example.watsapporderservices.data.database.input.Inputs
 import com.example.watsapporderservices.data.database.product.Products
+import com.example.watsapporderservices.data.database.session.Sessions
 import com.example.watsapporderservices.data.database.step.StepInputs
 import com.example.watsapporderservices.data.database.step.Steps
 import com.example.watsapporderservices.data.database.store.StoreProducts
@@ -31,7 +32,7 @@ object DatabaseFactory {
         )
         Database.connect(dataSource)
         transaction {
-            SchemaUtils.create(Users, Products, Steps, Inputs, StepInputs, Stores, StoreProducts)
+            SchemaUtils.create(Users, Products, Steps, Inputs, StepInputs, Stores, StoreProducts, Sessions)
             migrateUsers()
         }
     }

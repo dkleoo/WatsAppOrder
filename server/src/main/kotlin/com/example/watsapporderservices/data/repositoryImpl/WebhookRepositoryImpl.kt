@@ -1,5 +1,6 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
+import com.example.watsapporderservices.data.enum.SessionState
 import com.example.watsapporderservices.data.mapper.ProductResponse
 import com.example.watsapporderservices.data.mapper.StoreResponse
 import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
@@ -7,10 +8,12 @@ import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.domain.repository.AiRepository
 import com.example.watsapporderservices.domain.repository.MessageRepository
 import com.example.watsapporderservices.domain.repository.ProductRepository
+import com.example.watsapporderservices.domain.repository.SessionRepository
 import com.example.watsapporderservices.domain.repository.StoreRepository
 import com.example.watsapporderservices.domain.repository.WebhookRepository
 import com.example.watsapporderservices.domain.usecase.AiResult
 import com.example.watsapporderservices.domain.usecase.MessageResult
+import com.example.watsapporderservices.domain.usecase.SessionInfo
 import com.example.watsapporderservices.domain.usecase.WebhookResult
 import com.example.watsapporderservices.domain.usecase.WebhookStatus
 import org.slf4j.LoggerFactory
@@ -33,6 +36,7 @@ class WebhookRepositoryImpl(
     private val messageRepository: MessageRepository,
     private val storeRepository: StoreRepository,
     private val productRepository: ProductRepository,
+    private val sessionRepository: SessionRepository,
 ) : WebhookRepository {
     private val logger = LoggerFactory.getLogger(WebhookRepositoryImpl::class.java)
     private val processedMessageIds = ConcurrentHashMap.newKeySet<String>()
@@ -74,18 +78,8 @@ class WebhookRepositoryImpl(
         messages.forEach { incoming ->
             if (!markProcessed(incoming.id)) return@forEach
 
-            val products = productRepository.searchByStore(business.phone, business.idWhatsApp, incoming.text)
-            val systemPrompt = buildOrderAssistantPrompt(store, products)
-
-            val reply = when (val result = aiRepository.reply(systemPrompt, incoming.text)) {
-                is AiResult.Reply -> result.text
-                AiResult.NotConfigured -> AI_NOT_CONFIGURED_REPLY
-                is AiResult.Failed -> {
-                    logger.warn("Groq reply failed for {}: {}", incoming.from, result.detail)
-                    registerFailure("groq: ${result.detail}")
-                    AI_FAILED_REPLY
-                }
-            }
+            val session = sessionRepository.resume(incoming.from, store?.id)
+            val reply = buildReply(store, business, session, incoming.text)
 
             when (val sent = messageRepository.sendText(incoming.from, reply.take(MAX_REPLY_LENGTH))) {
                 is MessageResult.Sent -> {
@@ -101,38 +95,85 @@ class WebhookRepositoryImpl(
         }
     }
 
-    private fun buildOrderAssistantPrompt(store: StoreResponse?, products: List<ProductResponse>): String =
-        buildString {
-            append("Eres el asistente de pedidos de una tienda por WhatsApp. ")
-            append("Tu tarea es tomar pedidos: SIEMPRE saluda al cliente y pregúntale qué desea ordenar. ")
-            if (store != null) {
-                append("Datos de la tienda -> mensaje de bienvenida: \"${store.welcomeMessage}\"; ")
-                append("dirección: ${store.address}; teléfono: ${store.phone}. ")
-                append("Comienza tu respuesta con el mensaje de bienvenida. ")
-            }
-            when {
-                products.isEmpty() -> append(
-                    "No hay productos que coincidan con lo que pidió el cliente. " +
-                        "Pídele que aclare el nombre del producto o ofrécele el menú con lo que sí tengas. ",
-                )
+    private suspend fun buildReply(
+        store: StoreResponse?,
+        business: BusinessNumbers,
+        session: SessionInfo,
+        text: String,
+    ): String {
+        val welcome = if (session.isNew && store != null) "${store.welcomeMessage}\n\n" else ""
 
-                products.size == 1 -> append(
-                    "El producto que coincide es: ${describe(products.single())}. " +
-                        "Confírmale si desea pedirlo. ",
-                )
-
-                else -> {
-                    append("Hay varias coincidencias. Muéstraselas como opciones numeradas y pregúntale cuál desea: ")
-                    products.forEachIndexed { index, product -> append("${index + 1}) ${describe(product)}; ") }
-                }
+        val selectedOption = text.trim().toIntOrNull()
+        if (session.state == SessionState.SELECTING_PRODUCT &&
+            selectedOption != null &&
+            selectedOption in 1..session.optionProductIds.size
+        ) {
+            val product = productRepository.getProduct(session.optionProductIds[selectedOption - 1])
+            sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
+            return if (product != null) {
+                "${welcome}¡Perfecto! Elegiste ${describe(product)}. ¿Confirmas tu pedido?"
+            } else {
+                "${welcome}No pude encontrar esa opción. ¿Podrías decirme de nuevo qué deseas?"
             }
-            append("Usa SOLO estos productos y precios; no inventes otros. Responde breve y en el idioma del cliente.")
         }
 
+        val matching = productRepository.searchByStore(business.phone, business.idWhatsApp, text)
+        return when {
+            matching.size > 1 -> {
+                sessionRepository.saveState(
+                    session.id,
+                    session.storeId,
+                    SessionState.SELECTING_PRODUCT,
+                    matching.map { it.id },
+                )
+                welcome + buildOptions(matching)
+            }
+
+            matching.size == 1 -> {
+                sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
+                "${welcome}Encontré ${describe(matching.single())}. ¿Deseas pedirlo? (responde *sí* o *no*)"
+            }
+
+            else -> {
+                sessionRepository.saveState(session.id, session.storeId, SessionState.IDLE, emptyList())
+                val menu = productRepository.searchByStore(business.phone, business.idWhatsApp, null)
+                when (val result = aiRepository.reply(buildOrderAssistantPrompt(store, menu), text)) {
+                    is AiResult.Reply -> welcome + result.text
+                    AiResult.NotConfigured -> welcome + AI_NOT_CONFIGURED_REPLY
+                    is AiResult.Failed -> {
+                        logger.warn("Groq reply failed: {}", result.detail)
+                        registerFailure("groq: ${result.detail}")
+                        welcome + AI_FAILED_REPLY
+                    }
+                }
+            }
+        }
+    }
+
+    private fun buildOrdersText(store: StoreResponse?): String = buildString {
+        append("Eres el asistente de pedidos de una tienda por WhatsApp. ")
+        append("Tu tarea es tomar pedidos: pregunta qué desea ordenar y ayúdalo a elegir. ")
+        if (store != null) append("Tienda -> dirección: ${store.address}; teléfono: ${store.phone}. ")
+    }
+
+    private fun buildOrderAssistantPrompt(store: StoreResponse?, products: List<ProductResponse>): String =
+        buildString {
+            append(buildOrdersText(store))
+            if (products.isNotEmpty()) {
+                append("Productos disponibles: ")
+                products.forEach { append("${it.name} ($ ${it.price}); ") }
+            }
+            append("Usa SOLO esos productos y precios y no inventes otros. Responde breve, en el idioma del cliente.")
+        }
+
+    private fun buildOptions(products: List<ProductResponse>): String = buildString {
+        append("Encontré varias opciones, responde con el número de la que deseas:\n")
+        products.forEachIndexed { index, product -> append("${index + 1}. ${describe(product)}\n") }
+    }
+
     private fun describe(product: ProductResponse): String {
-        val price = product.price
         val quantity = product.quantity
-        return "${product.name} ($ $price)${if (quantity > 0) " - disponibles: $quantity" else ""}"
+        return "${product.name} ($ ${product.price})${if (quantity > 0) " - disponibles: $quantity" else ""}"
     }
 
     private fun registerFailure(detail: String) {
