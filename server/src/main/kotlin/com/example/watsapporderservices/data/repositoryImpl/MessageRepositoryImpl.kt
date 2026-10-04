@@ -2,6 +2,7 @@ package com.example.watsapporderservices.data.repositoryImpl
 
 import com.example.watsapporderservices.data.enum.MessageErrorCode
 import com.example.watsapporderservices.data.mapper.SendMessageRequest
+import com.example.watsapporderservices.data.mapper.WhatsAppErrorEnvelope
 import com.example.watsapporderservices.data.mapper.WhatsAppSendResponse
 import com.example.watsapporderservices.data.mapper.WhatsAppTextBody
 import com.example.watsapporderservices.data.mapper.WhatsAppTextPayload
@@ -26,7 +27,10 @@ private const val REQUEST_TIMEOUT_SECONDS = 15L
 class MessageRepositoryImpl(
     private val config: WhatsAppConfig,
 ) : MessageRepository {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
         .build()
@@ -61,19 +65,29 @@ class MessageRepositoryImpl(
             .POST(HttpRequest.BodyPublishers.ofString(payload))
             .build()
 
-        val response = withContext(Dispatchers.IO) {
-            runCatching { httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString()) }.getOrNull()
-        } ?: return MessageResult.ProviderError
+        val attempt = withContext(Dispatchers.IO) {
+            runCatching { httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString()) }
+        }
+        val response = attempt.getOrElse { cause ->
+            return MessageResult.ProviderError(cause.message ?: cause::class.simpleName)
+        }
 
-        if (response.statusCode() !in 200..299) return MessageResult.ProviderError
+        if (response.statusCode() !in 200..299) {
+            return MessageResult.ProviderError(parseErrorDetail(response.body()))
+        }
 
         val messageId = runCatching {
             json.decodeFromString(WhatsAppSendResponse.serializer(), response.body())
                 .messages?.firstOrNull()?.id
-        }.getOrNull() ?: return MessageResult.ProviderError
+        }.getOrNull() ?: return MessageResult.ProviderError("Malformed response from WhatsApp Cloud API")
 
         return MessageResult.Sent(messageId, to)
     }
+
+    private fun parseErrorDetail(body: String): String? = runCatching {
+        val error = json.decodeFromString(WhatsAppErrorEnvelope.serializer(), body).error
+        listOfNotNull(error?.code?.toString(), error?.message).joinToString(" ").ifBlank { null }
+    }.getOrNull()
 
     private fun messagesUrl(): String =
         "https://graph.facebook.com/${config.graphApiVersion}/${config.phoneNumberId}/messages"

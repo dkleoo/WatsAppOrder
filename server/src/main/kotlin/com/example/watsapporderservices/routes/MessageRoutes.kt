@@ -1,6 +1,7 @@
 package com.example.watsapporderservices.routes
 
 import com.example.watsapporderservices.data.enum.MessageErrorCode
+import com.example.watsapporderservices.data.mapper.ProviderErrorResponse
 import com.example.watsapporderservices.data.mapper.SendMessageRequest
 import com.example.watsapporderservices.data.mapper.SendMessageResponse
 import com.example.watsapporderservices.data.mapper.toResponse
@@ -29,8 +30,10 @@ fun Route.messageRoutes(useCase: MessageUseCase) {
                 MessageResult.NotConfigured ->
                     call.respond(HttpStatusCode.ServiceUnavailable, MessageErrorCode.NOT_CONFIGURED.toResponse())
 
-                MessageResult.ProviderError ->
-                    call.respond(HttpStatusCode.BadGateway, MessageErrorCode.SEND_FAILED.toResponse())
+                is MessageResult.ProviderError -> call.respond(
+                    HttpStatusCode.BadGateway,
+                    ProviderErrorResponse(MessageErrorCode.SEND_FAILED.code, result.detail),
+                )
             }
         }
     }

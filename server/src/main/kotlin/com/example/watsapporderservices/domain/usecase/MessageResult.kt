@@ -9,5 +9,5 @@ sealed interface MessageResult {
 
     data object NotConfigured : MessageResult
 
-    data object ProviderError : MessageResult
+    data class ProviderError(val detail: String? = null) : MessageResult
 }

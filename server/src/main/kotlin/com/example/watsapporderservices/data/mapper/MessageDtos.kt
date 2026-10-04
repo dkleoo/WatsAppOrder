@@ -17,6 +17,12 @@ data class SendMessageResponse(
     val to: String,
 )
 
+@Serializable
+data class ProviderErrorResponse(
+    val error: String,
+    val detail: String? = null,
+)
+
 fun MessageErrorCode.toResponse(): ErrorResponse = ErrorResponse(code)
 
 /** Payload sent to the WhatsApp Cloud API (`POST /{phoneNumberId}/messages`). */
@@ -41,4 +47,16 @@ internal data class WhatsAppSendResponse(
 @Serializable
 internal data class WhatsAppSentMessage(
     val id: String,
+)
+
+@Serializable
+internal data class WhatsAppErrorEnvelope(
+    val error: WhatsAppError? = null,
+)
+
+@Serializable
+internal data class WhatsAppError(
+    val message: String? = null,
+    val type: String? = null,
+    val code: Long? = null,
 )
