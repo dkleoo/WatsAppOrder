@@ -10,6 +10,7 @@ import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.domain.repository.AiRepository
 import com.example.watsapporderservices.domain.repository.MessageOption
 import com.example.watsapporderservices.domain.repository.MessageRepository
+import com.example.watsapporderservices.domain.repository.NotificationRepository
 import com.example.watsapporderservices.domain.repository.OrderRepository
 import com.example.watsapporderservices.domain.repository.ProductRepository
 import com.example.watsapporderservices.domain.repository.SessionRepository
@@ -78,6 +79,7 @@ class WebhookRepositoryImpl(
     private val sessionRepository: SessionRepository,
     private val orderRepository: OrderRepository,
     private val socketManager: OrderSocketManager,
+    private val notificationRepository: NotificationRepository,
 ) : WebhookRepository {
     private val logger = LoggerFactory.getLogger(WebhookRepositoryImpl::class.java)
     private val processedMessageIds = ConcurrentHashMap.newKeySet<String>()
@@ -325,8 +327,17 @@ class WebhookRepositoryImpl(
             order.copy(paymentType = payment, total = total, status = OrderStatus.PENDING),
         )
         saveState(session, SessionState.IDLE, emptyList(), null)
-        // Real-time: push the finished order to the store's live sockets.
+        // Real-time: push the finished order to the store's live sockets and send a push notification.
         socketManager.broadcastOrder(placed.toResponse())
+        runCatching {
+            notificationRepository.notifyNewOrder(
+                storeId = placed.storeId,
+                orderId = placed.id ?: 0,
+                sequence = placed.sequence ?: 0,
+                total = placed.total,
+                customerName = placed.customerName,
+            )
+        }.onFailure { logger.warn("Order push notification failed: {}", it.message) }
         return Reply.Text(buildOrderSummary(placed))
     }
 

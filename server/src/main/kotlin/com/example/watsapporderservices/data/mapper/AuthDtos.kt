@@ -23,6 +23,8 @@ data class FederatedAuthRequest(
     val idToken: String? = null,
     val provider: AuthProvider? = null,
     val name: String? = null,
+    /** Optional FCM device token used to register push notifications during the federated login. */
+    val deviceToken: String? = null,
 )
 
 @Serializable

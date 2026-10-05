@@ -1,6 +1,7 @@
 package com.example.watsapporderservices.data.database
 
 import com.example.watsapporderservices.data.database.input.Inputs
+import com.example.watsapporderservices.data.database.notification.DeviceTokens
 import com.example.watsapporderservices.data.database.order.OrderItems
 import com.example.watsapporderservices.data.database.order.Orders
 import com.example.watsapporderservices.data.database.product.Products
@@ -43,6 +44,7 @@ object DatabaseFactory {
                 Orders,
                 OrderItems,
                 Sessions,
+                DeviceTokens,
             )
             migrateUsers()
             migrateProducts()

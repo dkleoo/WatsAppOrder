@@ -18,3 +18,5 @@ services:
         value: "1415775780434889"
       - key: WHATSAPP_PHONE_NUMBER_ID
         value: "1379699841884103"
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false

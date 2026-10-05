@@ -8,13 +8,16 @@ import com.example.watsapporderservices.data.repositoryImpl.InputRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.MessageRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImpl
 import com.example.watsapporderservices.data.security.FirebaseConfig
+import com.example.watsapporderservices.data.security.FirebaseMessagingClient
 import com.example.watsapporderservices.data.security.FirebaseTokenVerifier
 import com.example.watsapporderservices.data.security.GroqConfig
 import com.example.watsapporderservices.data.security.JwtConfig
 import com.example.watsapporderservices.data.security.PasswordHasher
+import com.example.watsapporderservices.data.security.PushConfig
 import com.example.watsapporderservices.data.security.TokenService
 import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.data.database.input.InputDao
+import com.example.watsapporderservices.data.database.notification.DeviceTokenDao
 import com.example.watsapporderservices.data.database.order.OrderDao
 import com.example.watsapporderservices.data.database.order.OrderItemDao
 import com.example.watsapporderservices.data.database.product.ProductDao
@@ -25,12 +28,14 @@ import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.repositoryImpl.OrderRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
+import com.example.watsapporderservices.data.repositoryImpl.NotificationRepositoryImpl
 import com.example.watsapporderservices.data.realtime.OrderSocketManager
 import com.example.watsapporderservices.data.repositoryImpl.SessionRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.StoreRepositoryImpl
 import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
 import com.example.watsapporderservices.domain.usecase.MessageUseCase
+import com.example.watsapporderservices.domain.usecase.NotificationUseCase
 import com.example.watsapporderservices.domain.usecase.OrderUseCase
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
 import com.example.watsapporderservices.domain.usecase.StoreUseCase
@@ -42,6 +47,7 @@ import com.example.watsapporderservices.plugins.configureWebSockets
 import com.example.watsapporderservices.routes.authRoutes
 import com.example.watsapporderservices.routes.inputRoutes
 import com.example.watsapporderservices.routes.messageRoutes
+import com.example.watsapporderservices.routes.notificationRoutes
 import com.example.watsapporderservices.routes.orderRoutes
 import com.example.watsapporderservices.routes.productRoutes
 import com.example.watsapporderservices.routes.storeRoutes
@@ -67,12 +73,14 @@ fun Application.module() {
     }
     val userDao = UserDao()
     val storeDao = StoreDao()
+    val deviceTokenDao = DeviceTokenDao()
     val authRepository = AuthRepositoryImpl(
         userDao,
         storeDao,
         PasswordHasher(),
         tokenService,
         FirebaseTokenVerifier(firebaseConfig.projectId),
+        deviceTokenDao,
     )
     val authUseCase = AuthUseCase(authRepository)
     val whatsAppConfig = WhatsAppConfig.from(environment.config, System.getenv())
@@ -93,6 +101,12 @@ fun Application.module() {
     val sessionRepository = SessionRepositoryImpl(SessionDao())
     val orderRepository = OrderRepositoryImpl(OrderDao(), OrderItemDao())
     val orderSocketManager = OrderSocketManager()
+    val pushConfig = PushConfig.from(environment.config, System.getenv())
+    val messagingClient = FirebaseMessagingClient(pushConfig)
+    if (!messagingClient.isConfigured) {
+        log.warn("FIREBASE_SERVICE_ACCOUNT_JSON is not set: order push notifications are disabled")
+    }
+    val notificationRepository = NotificationRepositoryImpl(deviceTokenDao, messagingClient)
     val webhookUseCase = WebhookUseCase(
         WebhookRepositoryImpl(
             whatsAppConfig,
@@ -103,12 +117,14 @@ fun Application.module() {
             sessionRepository,
             orderRepository,
             orderSocketManager,
+            notificationRepository,
         ),
     )
     val messageUseCase = MessageUseCase(messageRepository)
     val productUseCase = ProductUseCase(productRepository)
     val storeUseCase = StoreUseCase(storeRepository)
     val orderUseCase = OrderUseCase(orderRepository, storeRepository)
+    val notificationUseCase = NotificationUseCase(notificationRepository)
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
     configureStatusPages()
@@ -120,6 +136,7 @@ fun Application.module() {
         messageRoutes(messageUseCase)
         storeRoutes(storeUseCase)
         orderRoutes(orderUseCase, tokenService, orderSocketManager)
+        notificationRoutes(notificationUseCase)
         productRoutes(productUseCase)
         inputRoutes(inputUseCase)
     }

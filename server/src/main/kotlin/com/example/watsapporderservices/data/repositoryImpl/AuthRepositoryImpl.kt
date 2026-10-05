@@ -1,5 +1,6 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
+import com.example.watsapporderservices.data.database.notification.DeviceTokenDao
 import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.database.user.UserDao
@@ -38,6 +39,7 @@ class AuthRepositoryImpl(
     private val passwordHasher: PasswordHasher,
     private val tokenService: TokenService,
     private val firebaseTokenVerifier: FirebaseTokenVerifier,
+    private val deviceTokenDao: DeviceTokenDao,
 ) : AuthRepository {
     override suspend fun register(request: RegisterRequest): AuthResult {
         val email = request.email.trim().lowercase()
@@ -87,7 +89,7 @@ class AuthRepositoryImpl(
             val linked = withContext(Dispatchers.IO) {
                 userDao.linkFederation(byFirebaseUid.id, firebaseUid, provider, email, null)
             }
-            return success(linked)
+            return successWithDevice(linked, request.deviceToken)
         }
 
         if (tokenEmail != null && claims.emailVerified) {
@@ -96,7 +98,7 @@ class AuthRepositoryImpl(
                 val linked = withContext(Dispatchers.IO) {
                     userDao.linkFederation(byEmail.id, firebaseUid, provider, tokenEmail, name)
                 }
-                return success(linked)
+                return successWithDevice(linked, request.deviceToken)
             }
         } else if (tokenEmail != null) {
             // The email is already owned by another account but Firebase has not verified it: refuse to
@@ -112,7 +114,7 @@ class AuthRepositoryImpl(
         val user = withContext(Dispatchers.IO) {
             createUserWithStore(email, name, passwordHash, firebaseUid, provider)
         }
-        return success(user)
+        return successWithDevice(user, request.deviceToken)
     }
 
     override suspend fun profile(userId: Int): UserResponse? =
@@ -166,6 +168,18 @@ class AuthRepositoryImpl(
             storeId = storeId,
             createdAt = createdAt,
         )
+    }
+
+    /**
+     * Issues the auth response and, when the client sent one, registers the FCM device token so the
+     * user starts receiving push notifications without a separate `/notifications/device` call.
+     */
+    private suspend fun successWithDevice(user: UserEntity, deviceToken: String?): AuthResult {
+        val token = deviceToken?.trim().orEmpty()
+        if (token.isNotEmpty()) {
+            withContext(Dispatchers.IO) { deviceTokenDao.upsert(user.id, token) }
+        }
+        return success(user)
     }
 
     private fun success(user: UserEntity): AuthResult.Success {
