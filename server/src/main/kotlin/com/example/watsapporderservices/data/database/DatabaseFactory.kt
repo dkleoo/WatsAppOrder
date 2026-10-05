@@ -1,6 +1,7 @@
 package com.example.watsapporderservices.data.database
 
 import com.example.watsapporderservices.data.database.input.Inputs
+import com.example.watsapporderservices.data.database.order.OrderItems
 import com.example.watsapporderservices.data.database.order.Orders
 import com.example.watsapporderservices.data.database.product.Products
 import com.example.watsapporderservices.data.database.session.Sessions
@@ -40,11 +41,13 @@ object DatabaseFactory {
                 StepInputs,
                 Stores,
                 Orders,
+                OrderItems,
                 Sessions,
             )
             migrateUsers()
             migrateProducts()
             migrateStores()
+            migrateOrders()
             dropLegacyStoreProducts()
         }
     }
@@ -68,6 +71,18 @@ object DatabaseFactory {
     /** Adds the owning user to a pre-existing `stores` table. */
     private fun JdbcTransaction.migrateStores() {
         exec("ALTER TABLE stores ADD COLUMN IF NOT EXISTS user_id INT")
+    }
+
+    /**
+     * Older `orders` tables kept the product inline. The order header no longer uses those columns
+     * (lines live in `order_items`); we drop them so the mapping stays consistent.
+     */
+    private fun JdbcTransaction.migrateOrders() {
+        listOf("product_id", "product_name", "unit_price", "selected_inputs", "quantity").forEach { column ->
+            exec("ALTER TABLE orders DROP COLUMN IF EXISTS $column")
+        }
+        // Old terminal status mapped to the new lifecycle.
+        exec("UPDATE orders SET status = 'PENDING' WHERE status = 'PLACED'")
     }
 
     /**

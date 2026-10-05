@@ -5,6 +5,7 @@ import com.example.watsapporderservices.data.enum.SessionState
 import com.example.watsapporderservices.data.mapper.ProductResponse
 import com.example.watsapporderservices.data.mapper.StoreResponse
 import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
+import com.example.watsapporderservices.data.realtime.OrderSocketManager
 import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.domain.repository.AiRepository
 import com.example.watsapporderservices.domain.repository.MessageOption
@@ -17,9 +18,11 @@ import com.example.watsapporderservices.domain.repository.WebhookRepository
 import com.example.watsapporderservices.domain.usecase.AiResult
 import com.example.watsapporderservices.domain.usecase.MessageResult
 import com.example.watsapporderservices.domain.usecase.OrderDraft
+import com.example.watsapporderservices.domain.usecase.OrderItemDraft
 import com.example.watsapporderservices.domain.usecase.SessionInfo
 import com.example.watsapporderservices.domain.usecase.WebhookResult
 import com.example.watsapporderservices.domain.usecase.WebhookStatus
+import com.example.watsapporderservices.data.mapper.toResponse
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
@@ -34,12 +37,15 @@ private const val MAX_REPLY_LENGTH = 4096
 private const val MAX_TRACKED_MESSAGE_IDS = 1000
 private const val PAGE_SIZE = 10
 private const val ASK_WHAT_TO_ORDER = "¿Qué deseas ordenar?"
+private const val PAYMENT_CASH_ID = "pay:cash"
+private const val PAYMENT_TRANSFER_ID = "pay:transfer"
 private const val QUESTION_SYSTEM_PROMPT =
     "Eres el asistente de pedidos de una tienda por WhatsApp. Devuelve SOLO una pregunta breve y clara, " +
         "sin listar productos y sin inventar datos."
 
-// Interactive ids: "product:<id>", "more:<page>", "confirm:yes", "confirm:no".
+// Interactive ids: "product:<id>", "step:<id>", "more:<page>", "confirm:yes", "confirm:no", "pay:*".
 private const val PRODUCT_ID_PREFIX = "product:"
+private const val STEP_ID_PREFIX = "step:"
 private const val MORE_ID_PREFIX = "more:"
 private const val CONFIRM_YES_ID = "confirm:yes"
 private const val CONFIRM_NO_ID = "confirm:no"
@@ -71,6 +77,7 @@ class WebhookRepositoryImpl(
     private val productRepository: ProductRepository,
     private val sessionRepository: SessionRepository,
     private val orderRepository: OrderRepository,
+    private val socketManager: OrderSocketManager,
 ) : WebhookRepository {
     private val logger = LoggerFactory.getLogger(WebhookRepositoryImpl::class.java)
     private val processedMessageIds = ConcurrentHashMap.newKeySet<String>()
@@ -121,10 +128,6 @@ class WebhookRepositoryImpl(
         }
     }
 
-    /**
-     * Resolves the conversation for one incoming message and sends the reply. Text replies and interactive
-     * menus go through [deliver], so the greeting can be prepended without losing the interactive type.
-     */
     private suspend fun deliver(
         from: String,
         welcome: String,
@@ -136,24 +139,23 @@ class WebhookRepositoryImpl(
         val text = incoming.text
         val interactiveId = incoming.interactiveId
 
-        // "mi catálogo" / greeting / store info are text-only intents handled before menus.
         if (session.state == SessionState.IDLE || session.state == SessionState.CONFIRMING_MORE) {
-            val effective = text
-            if (effective != null && asksForCatalog(effective)) {
-                sendProductList(from, welcome, business, session, pageFor(effective))
+            if (text != null && asksForCatalog(text)) {
+                sendProductList(from, welcome, business, session, pageFor(text))
                 return
             }
-            if (session.state == SessionState.IDLE && effective != null && !session.isNew &&
-                store != null && asksForStoreInfo(effective)
+            if (session.state == SessionState.IDLE && text != null && !session.isNew &&
+                store != null && asksForStoreInfo(text)
             ) {
                 sendText(from, welcome + storeInfo(store))
                 return
             }
-            if (session.state == SessionState.IDLE && effective != null && isGreeting(effective)) {
+            if (session.state == SessionState.IDLE && text != null && isGreeting(text)) {
                 sendText(from, welcome + ASK_WHAT_TO_ORDER)
                 return
             }
         }
+
         val reply = buildReply(store, business, session, text, interactiveId)
         when (reply) {
             is Reply.Text -> sendText(from, welcome + reply.text)
@@ -171,12 +173,12 @@ class WebhookRepositoryImpl(
     ): Reply = when (session.state) {
         SessionState.IDLE -> handleIdle(business, session, text)
         SessionState.SELECTING_PRODUCT -> handleProductSelection(session, text, interactiveId)
+        SessionState.SELECTING_STEP -> handleStepSelection(session, text, interactiveId)
+        SessionState.SELECTING_QUANTITY -> handleQuantity(session, text)
         SessionState.CONFIRMING_MORE -> handleMoreProducts(business, session, text, interactiveId)
-        SessionState.SELECTING_INGREDIENTS -> handleIngredients(session, text, interactiveId)
-        SessionState.AWAITING_QUANTITY -> handleQuantity(session, text)
         SessionState.AWAITING_NAME -> handleName(session, text)
         SessionState.AWAITING_ADDRESS -> handleAddress(session, text)
-        SessionState.AWAITING_PAYMENT -> handlePayment(session, text)
+        SessionState.SELECTING_PAYMENT -> handlePayment(session, text, interactiveId)
     }
 
     private suspend fun handleIdle(business: BusinessNumbers, session: SessionInfo, text: String?): Reply {
@@ -211,6 +213,39 @@ class WebhookRepositoryImpl(
         return startProduct(session, product)
     }
 
+    /** Multi-choice step: the client can pick several steps (comma-separated) in one reply. */
+    private suspend fun handleStepSelection(
+        session: SessionInfo,
+        text: String?,
+        interactiveId: String?,
+    ): Reply {
+        val item = loadLastItem(session)
+            ?: return restartOrder(session, "Se reinició tu pedido.")
+        val chosen = mutableListOf<Int>()
+        if (interactiveId != null) {
+            stepIdFrom(interactiveId)?.let { chosen += it }
+        } else if (text != null) {
+            parseNumbers(text).mapNotNullTo(chosen) { n -> session.optionProductIds.getOrNull(n - 1) }
+        }
+        if (chosen.isEmpty()) return Reply.Text("Elige al menos una opción de la lista.")
+        val stepName = loadStepNames(session, chosen).firstOrNull()
+        orderRepository.updateItem(item.copy(selectedInputIds = chosen.distinct(), stepName = stepName))
+        saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), session.orderId)
+        return Reply.Text(ask("pide la cantidad que desea", "¿Cuántos deseas?"))
+    }
+
+    private suspend fun handleQuantity(session: SessionInfo, text: String?): Reply {
+        val item = loadLastItem(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val quantity = text?.let { parseNumbers(it).firstOrNull() }
+        if (quantity == null) return Reply.Text("Indícame un número. ¿Cuántos deseas?")
+        if (quantity <= 0) return Reply.Text("La cantidad debe ser mayor a 0. ¿Cuántos deseas?")
+        orderRepository.updateItem(item.copy(quantity = quantity))
+        // Recompute the running total from the header + all its lines.
+        refreshTotal(session)
+        saveState(session, SessionState.CONFIRMING_MORE, emptyList(), session.orderId)
+        return moreButtons()
+    }
+
     private suspend fun handleMoreProducts(
         business: BusinessNumbers,
         session: SessionInfo,
@@ -219,45 +254,18 @@ class WebhookRepositoryImpl(
     ): Reply {
         when (interactiveId) {
             CONFIRM_YES_ID -> return Reply.Text(ASK_WHAT_TO_ORDER)
-            CONFIRM_NO_ID -> return askDeliveryDetails(session)
+            CONFIRM_NO_ID -> return askName(session)
         }
         if (text == null) return moreButtons()
         val normalized = text.lowercase().trim()
         return when {
-            isNegative(normalized) -> askDeliveryDetails(session)
+            isNegative(normalized) -> askName(session)
             isAffirmative(normalized) -> Reply.Text(ASK_WHAT_TO_ORDER)
             else -> {
                 val products = productRepository.searchByStore(business.phone, business.idWhatsApp, text)
                 if (products.isNotEmpty()) productListOrStart(business, session, products, 0, null) else moreButtons()
             }
         }
-    }
-
-    private suspend fun handleIngredients(
-        session: SessionInfo,
-        text: String?,
-        interactiveId: String?,
-    ): Reply {
-        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
-        val chosen = if (interactiveId != null) {
-            productIdFrom(interactiveId)?.let { listOf(it) }.orEmpty()
-        } else {
-            text?.let { parseNumbers(it) }?.mapNotNull { n -> session.optionProductIds.getOrNull(n - 1) }.orEmpty()
-        }
-        if (chosen.isEmpty()) return Reply.Text("Elige los ingredientes de la lista.")
-        orderRepository.save(order.copy(selectedInputIds = chosen.distinct()))
-        saveState(session, SessionState.AWAITING_QUANTITY, emptyList(), order.id)
-        return Reply.Text(ask("pide la cantidad que desea", "¿Cuántos deseas?"))
-    }
-
-    private suspend fun handleQuantity(session: SessionInfo, text: String?): Reply {
-        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
-        val quantity = text?.let { parseNumbers(it).firstOrNull() }
-        if (quantity == null) return Reply.Text("Indícame un número. ¿Cuántos deseas?")
-        if (quantity <= 0) return Reply.Text("La cantidad debe ser mayor a 0. ¿Cuántos deseas?")
-        orderRepository.save(order.copy(quantity = quantity))
-        saveState(session, SessionState.CONFIRMING_MORE, emptyList(), order.id)
-        return moreButtons()
     }
 
     private suspend fun handleName(session: SessionInfo, text: String?): Reply {
@@ -274,58 +282,103 @@ class WebhookRepositoryImpl(
         val address = text?.trim().orEmpty().take(300)
         if (address.isBlank()) return Reply.Text("¿Cuál es la dirección de entrega?")
         orderRepository.save(order.copy(deliveryAddress = address))
-        saveState(session, SessionState.AWAITING_PAYMENT, emptyList(), order.id)
-        return Reply.Text(
-            ask(
-                "pide el tipo de pago (efectivo, transferencia, tarjeta, etc.)",
-                "¿Cómo deseas pagar? (efectivo, transferencia, tarjeta...)",
+        saveState(session, SessionState.SELECTING_PAYMENT, emptyList(), order.id)
+        return Reply.List(
+            body = "¿Cómo deseas pagar?",
+            buttonText = "Elegir pago",
+            rows = listOf(
+                MessageOption(id = PAYMENT_CASH_ID, title = "Efectivo"),
+                MessageOption(id = PAYMENT_TRANSFER_ID, title = "Transferencia"),
             ),
+            paged = false,
         )
     }
 
-    private suspend fun handlePayment(session: SessionInfo, text: String?): Reply {
+    private suspend fun handlePayment(session: SessionInfo, text: String?, interactiveId: String?): Reply {
         val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
-        val payment = text?.trim().orEmpty().take(60)
-        if (payment.isBlank()) return Reply.Text("¿Cómo deseas pagar? (efectivo, transferencia, tarjeta...)")
-        val total = (order.unitPrice ?: 0.0) * (order.quantity ?: 0)
+        val payment = when {
+            interactiveId == PAYMENT_CASH_ID -> "Efectivo"
+            interactiveId == PAYMENT_TRANSFER_ID -> "Transferencia"
+            text != null && text.contains("transfer", ignoreCase = true) -> "Transferencia"
+            text != null && text.contains("efect", ignoreCase = true) -> "Efectivo"
+            else -> null
+        } ?: return paymentList()
+
+        val items = order.items
+        val total = items.sumOf { it.unitPrice * it.quantity }
         val placed = orderRepository.save(
-            order.copy(paymentType = payment, total = total, status = OrderStatus.PLACED),
+            order.copy(paymentType = payment, total = total, status = OrderStatus.PENDING),
         )
         saveState(session, SessionState.IDLE, emptyList(), null)
+        // Real-time: push the finished order to the store's live sockets.
+        socketManager.broadcastOrder(placed.toResponse())
         return Reply.Text(buildOrderSummary(placed))
     }
 
     private suspend fun startProduct(session: SessionInfo, product: ProductResponse): Reply {
-        val created = orderRepository.createDraft(session.storeId, session.customerPhone)
-        val order = orderRepository.save(
-            created.copy(
+        val order = loadOrder(session) ?: orderRepository.createDraft(session.storeId, session.customerPhone)
+        val item = orderRepository.addItem(
+            order.id ?: return Reply.Text("No pude iniciar el pedido, intenta de nuevo."),
+            OrderItemDraft(
+                id = null,
                 productId = product.id,
                 productName = product.name,
                 unitPrice = product.price,
-                status = OrderStatus.DRAFT,
             ),
         )
-        val inputs = product.steps.flatMap { it.inputs }
-        if (inputs.isNotEmpty()) {
-            saveState(session, SessionState.SELECTING_INGREDIENTS, inputs.map { it.id }, order.id)
+        saveState(session, SessionState.SELECTING_STEP, emptyList(), order.id)
+
+        val steps = product.steps
+        if (steps.isNotEmpty()) {
+            val options = steps.map { MessageOption(id = "$STEP_ID_PREFIX${it.id}", title = it.name) }
             return Reply.List(
-                body = "Elegiste ${product.name}. ¿Con qué ingredientes lo deseas?",
-                buttonText = "Ingredientes",
-                rows = inputs.map { MessageOption(id = "$PRODUCT_ID_PREFIX${it.id}", title = it.name) },
+                body = "Elegiste ${product.name}. ¿Qué ${stepLabel(steps.size)} deseas?",
+                buttonText = "Elegir",
+                rows = options,
                 paged = false,
             )
         }
-        saveState(session, SessionState.AWAITING_QUANTITY, emptyList(), order.id)
-        return Reply.Text(
-            "Elegiste ${product.name} ($ ${product.price}).\n" +
-                ask("pide la cantidad que desea", "¿Cuántos deseas?"),
-        )
+        return askQuantity(session, item)
     }
 
-    /**
-     * Builds either a paged interactive list or, when there is a single match, starts the product directly.
-     * The store's full product ids are saved on the session so selection resolution never depends on the label.
-     */
+    private suspend fun askQuantity(session: SessionInfo, item: OrderItemDraft): Reply {
+        saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), session.orderId)
+        return Reply.Text("Elegiste ${item.productName} ($ ${item.unitPrice}).\n" +
+            ask("pide la cantidad que desea", "¿Cuántos deseas?"))
+    }
+
+    private suspend fun askName(session: SessionInfo): Reply {
+        saveState(session, SessionState.AWAITING_NAME, emptyList(), session.orderId)
+        return Reply.Text(ask("pide el nombre de la persona que recibe el pedido", "¿A nombre de quién es el pedido?"))
+    }
+
+    private fun paymentList(): Reply = Reply.List(
+        body = "¿Cómo deseas pagar?",
+        buttonText = "Elegir pago",
+        rows = listOf(
+            MessageOption(id = PAYMENT_CASH_ID, title = "Efectivo"),
+            MessageOption(id = PAYMENT_TRANSFER_ID, title = "Transferencia"),
+        ),
+        paged = false,
+    )
+
+    private fun stepLabel(count: Int): String = if (count == 1) "opción" else "opciones"
+
+    /** Loads the last line added to the current order. */
+    private suspend fun loadLastItem(session: SessionInfo): OrderItemDraft? =
+        loadOrder(session)?.items?.lastOrNull()
+
+    private suspend fun loadStepNames(session: SessionInfo, stepIds: List<Int>): List<String> {
+        val product = loadLastItem(session)?.productId?.let { productRepository.getProduct(it) } ?: return emptyList()
+        return product.steps.filter { it.id in stepIds }.map { it.name }
+    }
+
+    private suspend fun refreshTotal(session: SessionInfo) {
+        val order = loadOrder(session) ?: return
+        val total = order.items.sumOf { it.unitPrice * it.quantity }
+        orderRepository.save(order.copy(total = total))
+    }
+
     private suspend fun productListOrStart(
         business: BusinessNumbers,
         session: SessionInfo,
@@ -366,11 +419,6 @@ class WebhookRepositoryImpl(
         ),
     )
 
-    private suspend fun askDeliveryDetails(session: SessionInfo): Reply {
-        saveState(session, SessionState.AWAITING_NAME, emptyList(), session.orderId)
-        return Reply.Text(ask("pide el nombre de la persona que recibe el pedido", "¿A nombre de quién es el pedido?"))
-    }
-
     private suspend fun sendProductList(
         from: String,
         welcome: String,
@@ -387,17 +435,14 @@ class WebhookRepositoryImpl(
     }
 
     private suspend fun sendText(from: String, text: String) {
-        val result = messageRepository.sendText(from, text.take(MAX_REPLY_LENGTH))
-        track(from, result)
+        track(from, messageRepository.sendText(from, text.take(MAX_REPLY_LENGTH)))
     }
 
     private suspend fun sendListReply(from: String, welcome: String, reply: Reply.List) {
         val body = (welcome + reply.body).take(MAX_REPLY_LENGTH)
-        val pageButtons = reply.rows.count { it.id.startsWith(MORE_ID_PREFIX) }
-        val result = if (reply.paged && pageButtons > 0) {
-            // Keep "Ver más" in a section, product rows in another, so both render distinctly.
-            val productRows = reply.rows.filterNot { it.id.startsWith(MORE_ID_PREFIX) }
-            val moreRows = reply.rows.filter { it.id.startsWith(MORE_ID_PREFIX) }
+        val moreRows = reply.rows.filter { it.id.startsWith(MORE_ID_PREFIX) }
+        val productRows = reply.rows.filterNot { it.id.startsWith(MORE_ID_PREFIX) }
+        val result = if (reply.paged && moreRows.isNotEmpty()) {
             messageRepository.sendListSections(from, body, reply.buttonText, productRows, moreRows)
         } else {
             messageRepository.sendList(from, body, reply.buttonText, reply.rows)
@@ -406,8 +451,7 @@ class WebhookRepositoryImpl(
     }
 
     private suspend fun sendButtons(from: String, welcome: String, reply: Reply.Buttons) {
-        val result = messageRepository.sendButtons(from, (welcome + reply.body).take(MAX_REPLY_LENGTH), reply.buttons)
-        track(from, result)
+        track(from, messageRepository.sendButtons(from, (welcome + reply.body).take(MAX_REPLY_LENGTH), reply.buttons))
     }
 
     private fun track(from: String, result: MessageResult) {
@@ -456,6 +500,11 @@ class WebhookRepositoryImpl(
             ?.removePrefix(PRODUCT_ID_PREFIX)
             ?.toIntOrNull()
 
+    private fun stepIdFrom(interactiveId: String?): Int? =
+        interactiveId?.takeIf { it.startsWith(STEP_ID_PREFIX) }
+            ?.removePrefix(STEP_ID_PREFIX)
+            ?.toIntOrNull()
+
     private fun pageFor(text: String): Int =
         Regex("(\\d+)").find(text)?.value?.toIntOrNull()?.minus(1)?.coerceAtLeast(0) ?: 0
 
@@ -493,14 +542,15 @@ class WebhookRepositoryImpl(
     }
 
     private fun buildOrderSummary(order: OrderDraft): String = buildString {
-        append("✅ ¡Pedido registrado!\n\n")
-        append("Producto: ${order.productName}\n")
-        append("Cantidad: ${order.quantity}\n")
-        append("Total: $ ${order.total}\n")
+        append("✅ ¡Pedido #${order.id} registrado!\n\n")
+        order.items.forEach { item ->
+            append("• ${item.quantity} x ${item.productName} = $ ${item.unitPrice * item.quantity}\n")
+        }
+        append("\nTotal: $ ${order.total}\n")
         append("Nombre: ${order.customerName}\n")
         append("Dirección: ${order.deliveryAddress}\n")
         append("Pago: ${order.paymentType}\n\n")
-        append("¡Gracias por tu compra!")
+        append("¡Gracias por tu compra! Guarda tu número de pedido: #${order.id}")
     }
 
     private fun parseNumbers(text: String): List<Int> =

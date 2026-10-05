@@ -18,7 +18,11 @@ import io.ktor.server.plugins.ContentTransformationException
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
+import io.ktor.server.websocket.WebSockets
+import io.ktor.server.websocket.pingPeriod
+import io.ktor.server.websocket.timeout
 import kotlinx.serialization.json.Json
+import java.time.Duration
 
 fun Application.configureSerialization() {
     install(ContentNegotiation) {
@@ -28,6 +32,13 @@ fun Application.configureSerialization() {
                 encodeDefaults = true
             },
         )
+    }
+}
+
+fun Application.configureWebSockets() {
+    install(WebSockets) {
+        pingPeriod = kotlin.time.Duration.parse("30s")
+        timeout = kotlin.time.Duration.parse("60s")
     }
 }
 

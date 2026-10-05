@@ -132,17 +132,57 @@ The conversation is stateful per customer through the `sessions` table:
 
 ### Orders
 
-The `orders` table stores the order and is related to the store (`store_id`), with `customer_phone`,
-`product_id`, `product_name`, `unit_price`, `selected_inputs`, `quantity`, `total`, `customer_name`,
-`delivery_address`, `payment_type`, `status` (`DRAFT`/`PLACED`), `created_at` and `updated_at`.
+The `orders` table stores the order **header** (`store_id`, `customer_phone`, `customer_name`,
+`delivery_address`, `payment_type`, `total`, `status`, timestamps). The products of the order live in
+`order_items` (`order_id`, `product_id`, `product_name`, `unit_price`, `selected_inputs`, `step_name`,
+`quantity`), so a single order can hold **several products**.
 
-Order flow (each step is persisted as a `DRAFT` order linked to the session):
+Order status lifecycle: `DRAFT` (being built) → `PENDING` (just placed) → `IN_KITCHEN` → `ON_THE_WAY` →
+`DELIVERED`.
 
-1. The client picks a product (numbered options) and, if it has steps, the ingredients.
-2. The bot asks (through the AI) for the **quantity**, the **customer name**, the **delivery address** and the
-   **payment type**.
-3. When all data is collected, the **total** is computed (`unit_price * quantity`), the order is marked
-   `PLACED` and a summary is sent to the client.
+Order endpoints (both require `Authorization: Bearer <jwt>`; the store is the authenticated user's):
+
+| Method | Path                   | Body / result |
+|--------|------------------------|---------------|
+| GET    | `/orders`              | list of the store's orders (newest first), with their items |
+| PATCH  | `/orders/{id}/status`  | `{ "status": "IN_KITCHEN" }` |
+
+```sh
+curl http://localhost:8080/orders -H "Authorization: Bearer <jwt>"
+
+curl -X PATCH http://localhost:8080/orders/12/status \
+  -H "Authorization: Bearer <jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"ON_THE_WAY"}'
+```
+
+Valid statuses: `PENDING`, `IN_KITCHEN`, `ON_THE_WAY`, `DELIVERED`.
+
+### Live orders (WebSocket + sequence)
+
+Every order gets a monotonic **`sequence`** (a DB autoincrement column), so clients can measure how far the
+stream is and resume after a disconnect.
+
+| Channel | Path | Description |
+|---------|------|-------------|
+| WS  | `/orders/ws?token=<jwt>` | Live stream of new orders for the authenticated user's store. Each frame is an `OrderResponse` JSON with its `sequence`. The socket stays open (no retry loop). |
+| GET | `/orders/sequence` | Current highest sequence: `{ "sequence": 42 }`. |
+| GET | `/orders/since/{sequence}` | Orders of the store with `sequence > {sequence}`, ascending (catch-up after reconnect). |
+
+Flow: the client connects to `/orders/ws`, stores the last `sequence` it saw, and if it disconnects it reconnects
+and calls `/orders/since/{lastSequence}` to fetch what it missed. A new order is broadcast to every socket of that
+store the moment it is placed.
+
+Order flow:
+
+1. The client picks a product (interactive list). If the product has **steps**, a second interactive list shows
+   the **step names** (multi-choice: the client can pick several).
+2. The bot asks the **quantity**, then **"¿Deseas agregar algo más?"** with **Sí / No** buttons. Choosing *Sí*
+   adds another product to the same order.
+3. When *No*, the bot asks the **name**, the **delivery address** and the **payment type** (interactive list:
+   *Efectivo* / *Transferencia*).
+4. The order is saved with status **PENDING**, the **total** is computed from all lines, and the client is given
+   the **order number** (the autoincrement id): *"Tu pedido #12 fue registrado"*.
 
 ### Stores and product filtering
 

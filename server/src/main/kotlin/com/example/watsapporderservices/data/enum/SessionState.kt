@@ -3,10 +3,10 @@ package com.example.watsapporderservices.data.enum
 enum class SessionState {
     IDLE,
     SELECTING_PRODUCT,
+    SELECTING_STEP,
+    SELECTING_QUANTITY,
     CONFIRMING_MORE,
-    SELECTING_INGREDIENTS,
-    AWAITING_QUANTITY,
     AWAITING_NAME,
     AWAITING_ADDRESS,
-    AWAITING_PAYMENT,
+    SELECTING_PAYMENT,
 }

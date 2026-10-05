@@ -16,6 +16,7 @@ import com.example.watsapporderservices.data.security.TokenService
 import com.example.watsapporderservices.data.security.WhatsAppConfig
 import com.example.watsapporderservices.data.database.input.InputDao
 import com.example.watsapporderservices.data.database.order.OrderDao
+import com.example.watsapporderservices.data.database.order.OrderItemDao
 import com.example.watsapporderservices.data.database.product.ProductDao
 import com.example.watsapporderservices.data.database.session.SessionDao
 import com.example.watsapporderservices.data.database.step.StepDao
@@ -24,20 +25,24 @@ import com.example.watsapporderservices.data.database.store.StoreDao
 import com.example.watsapporderservices.data.database.user.UserDao
 import com.example.watsapporderservices.data.repositoryImpl.OrderRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.ProductRepositoryImpl
+import com.example.watsapporderservices.data.realtime.OrderSocketManager
 import com.example.watsapporderservices.data.repositoryImpl.SessionRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.StoreRepositoryImpl
 import com.example.watsapporderservices.domain.usecase.AuthUseCase
 import com.example.watsapporderservices.domain.usecase.InputUseCase
 import com.example.watsapporderservices.domain.usecase.MessageUseCase
+import com.example.watsapporderservices.domain.usecase.OrderUseCase
 import com.example.watsapporderservices.domain.usecase.ProductUseCase
 import com.example.watsapporderservices.domain.usecase.StoreUseCase
 import com.example.watsapporderservices.domain.usecase.WebhookUseCase
 import com.example.watsapporderservices.plugins.configureSecurity
 import com.example.watsapporderservices.plugins.configureSerialization
 import com.example.watsapporderservices.plugins.configureStatusPages
+import com.example.watsapporderservices.plugins.configureWebSockets
 import com.example.watsapporderservices.routes.authRoutes
 import com.example.watsapporderservices.routes.inputRoutes
 import com.example.watsapporderservices.routes.messageRoutes
+import com.example.watsapporderservices.routes.orderRoutes
 import com.example.watsapporderservices.routes.productRoutes
 import com.example.watsapporderservices.routes.storeRoutes
 import com.example.watsapporderservices.routes.webhookRoutes
@@ -86,7 +91,8 @@ fun Application.module() {
         userDao,
     )
     val sessionRepository = SessionRepositoryImpl(SessionDao())
-    val orderRepository = OrderRepositoryImpl(OrderDao())
+    val orderRepository = OrderRepositoryImpl(OrderDao(), OrderItemDao())
+    val orderSocketManager = OrderSocketManager()
     val webhookUseCase = WebhookUseCase(
         WebhookRepositoryImpl(
             whatsAppConfig,
@@ -96,20 +102,24 @@ fun Application.module() {
             productRepository,
             sessionRepository,
             orderRepository,
+            orderSocketManager,
         ),
     )
     val messageUseCase = MessageUseCase(messageRepository)
     val productUseCase = ProductUseCase(productRepository)
     val storeUseCase = StoreUseCase(storeRepository)
+    val orderUseCase = OrderUseCase(orderRepository, storeRepository)
     val inputUseCase = InputUseCase(InputRepositoryImpl(InputDao()))
     configureSerialization()
     configureStatusPages()
     configureSecurity(tokenService)
+    configureWebSockets()
     routing {
         authRoutes(authUseCase)
         webhookRoutes(webhookUseCase)
         messageRoutes(messageUseCase)
         storeRoutes(storeUseCase)
+        orderRoutes(orderUseCase, tokenService, orderSocketManager)
         productRoutes(productUseCase)
         inputRoutes(inputUseCase)
     }
