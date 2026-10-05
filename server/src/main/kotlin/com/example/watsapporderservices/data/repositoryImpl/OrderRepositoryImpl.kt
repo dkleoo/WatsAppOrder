@@ -1,10 +1,18 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
+import com.example.watsapporderservices.data.database.input.InputDao
+import com.example.watsapporderservices.data.database.input.InputEntity
 import com.example.watsapporderservices.data.database.order.OrderDao
 import com.example.watsapporderservices.data.database.order.OrderEntity
 import com.example.watsapporderservices.data.database.order.OrderItemDao
 import com.example.watsapporderservices.data.database.order.OrderItemEntity
+import com.example.watsapporderservices.data.database.step.StepDao
+import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.mapper.OrderDetailItemResponse
+import com.example.watsapporderservices.data.mapper.OrderDetailResponse
+import com.example.watsapporderservices.data.mapper.OrderItemInputResponse
+import com.example.watsapporderservices.data.mapper.OrderItemStepResponse
 import com.example.watsapporderservices.data.mapper.OrderResponse
 import com.example.watsapporderservices.data.mapper.toResponse
 import com.example.watsapporderservices.domain.repository.OrderRepository
@@ -17,6 +25,9 @@ import java.math.BigDecimal
 class OrderRepositoryImpl(
     private val orderDao: OrderDao,
     private val orderItemDao: OrderItemDao,
+    private val stepDao: StepDao,
+    private val stepInputDao: StepInputDao,
+    private val inputDao: InputDao,
 ) : OrderRepository {
     override suspend fun createDraft(storeId: Int?, customerPhone: String): OrderDraft =
         withContext(Dispatchers.IO) {
@@ -28,10 +39,17 @@ class OrderRepositoryImpl(
         order.toDraft(orderItemDao.findByOrderId(id).map { it.toDraft() })
     }
 
-    override suspend fun getOrders(storeId: Int): List<OrderResponse> = withContext(Dispatchers.IO) {
-        orderDao.findByStoreId(storeId).map { order ->
-            order.toDraft(orderItemDao.findByOrderId(order.id).map { it.toDraft() }).toResponse()
+    override suspend fun getOrders(storeId: Int, statuses: List<OrderStatus>): List<OrderResponse> =
+        withContext(Dispatchers.IO) {
+            orderDao.findByStoreId(storeId, statuses).map { order ->
+                order.toDraft(orderItemDao.findByOrderId(order.id).map { it.toDraft() }).toResponse()
+            }
         }
+
+    override suspend fun getOrderDetail(id: Int): OrderDetailResponse? = withContext(Dispatchers.IO) {
+        val order = orderDao.findById(id) ?: return@withContext null
+        val items = orderItemDao.findByOrderId(id).map { buildItemDetail(it) }
+        order.toDetailResponse(items)
     }
 
     override suspend fun maxSequence(): Long = withContext(Dispatchers.IO) {
@@ -89,7 +107,79 @@ class OrderRepositoryImpl(
         orderItemDao.update(entity)
         item
     }
+
+    /**
+     * Resolves an order line's chosen options to names/prices and groups them by the product's steps,
+     * so the UI can render e.g. "ENTRADA (SOPA): Sopa Marinera Especial +$2.00".
+     */
+    private fun buildItemDetail(item: OrderItemEntity): OrderDetailItemResponse {
+        val inputsById = inputDao.findByIds(item.selectedInputIds).associateBy { it.id }
+        val steps = item.productId?.let { resolveSteps(it, item, inputsById) }.orEmpty()
+        return OrderDetailItemResponse(
+            id = item.id,
+            productId = item.productId,
+            productName = item.productName,
+            unitPrice = item.unitPrice.toDouble(),
+            quantity = item.quantity,
+            subtotal = item.unitPrice.toDouble() * item.quantity,
+            steps = steps,
+        )
+    }
+
+    private fun resolveSteps(
+        productId: Int,
+        item: OrderItemEntity,
+        inputsById: Map<Int, InputEntity>,
+    ): List<OrderItemStepResponse> {
+        val steps = stepDao.findByProductId(productId)
+        val inputsByStep = stepInputDao.findByStepIds(steps.map { it.id })
+            .groupBy({ it.stepId }, { it.inputId })
+        val matched = mutableSetOf<Int>()
+        val grouped = steps.mapNotNull { step ->
+            val chosen = inputsByStep[step.id].orEmpty()
+                .filter { it in item.selectedInputIds }
+                .mapNotNull { id -> inputsById[id] }
+            if (chosen.isEmpty()) return@mapNotNull null
+            matched += chosen.map { it.id }
+            OrderItemStepResponse(
+                stepId = step.id,
+                name = step.name,
+                position = step.position,
+                inputs = chosen.map { it.toDetailInput() },
+            )
+        }
+        // Options whose step no longer exists (product edited/deleted) are kept so nothing is lost.
+        val leftovers = item.selectedInputIds.filterNot { it in matched }.mapNotNull { inputsById[it] }
+        if (leftovers.isEmpty()) return grouped
+        return grouped + OrderItemStepResponse(
+            stepId = null,
+            name = item.stepName ?: "Opciones",
+            position = grouped.size,
+            inputs = leftovers.map { it.toDetailInput() },
+        )
+    }
 }
+
+private fun InputEntity.toDetailInput(): OrderItemInputResponse = OrderItemInputResponse(
+    id = id,
+    name = name,
+    price = price.toDouble(),
+)
+
+private fun OrderEntity.toDetailResponse(items: List<OrderDetailItemResponse>): OrderDetailResponse = OrderDetailResponse(
+    id = id,
+    sequence = sequence,
+    storeId = storeId,
+    customerPhone = customerPhone,
+    customerName = customerName,
+    deliveryAddress = deliveryAddress,
+    paymentType = paymentType,
+    total = total?.toDouble(),
+    status = status,
+    createdAt = createdAt,
+    updatedAt = updatedAt,
+    items = items,
+)
 
 private fun OrderEntity.toDraft(items: List<OrderItemDraft>): OrderDraft = OrderDraft(
     id = id,

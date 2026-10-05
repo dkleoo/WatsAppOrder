@@ -99,7 +99,7 @@ fun Application.module() {
         userDao,
     )
     val sessionRepository = SessionRepositoryImpl(SessionDao())
-    val orderRepository = OrderRepositoryImpl(OrderDao(), OrderItemDao())
+    val orderRepository = OrderRepositoryImpl(OrderDao(), OrderItemDao(), StepDao(), StepInputDao(), InputDao())
     val orderSocketManager = OrderSocketManager()
     val pushConfig = PushConfig.from(environment.config, System.getenv())
     val messagingClient = FirebaseMessagingClient(pushConfig)

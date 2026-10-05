@@ -1,6 +1,7 @@
 package com.example.watsapporderservices.domain.usecase
 
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.mapper.OrderDetailResponse
 import com.example.watsapporderservices.data.mapper.OrderResponse
 import com.example.watsapporderservices.domain.repository.OrderRepository
 import com.example.watsapporderservices.domain.repository.StoreRepository
@@ -9,10 +10,23 @@ class OrderUseCase(
     private val orderRepository: OrderRepository,
     private val storeRepository: StoreRepository,
 ) {
-    /** Orders of the authenticated user's store. Empty if the user has no store. */
-    suspend fun getOrders(userId: Int): List<OrderResponse> {
+    /**
+     * Orders of the authenticated user's store, all statuses by default. Empty if the user has no store.
+     * When [statuses] is not empty, only orders in those statuses are returned.
+     */
+    suspend fun getOrders(userId: Int, statuses: List<OrderStatus> = emptyList()): List<OrderResponse> {
         val store = storeRepository.getStoreByUser(userId) ?: return emptyList()
-        return orderRepository.getOrders(store.id)
+        return orderRepository.getOrders(store.id, statuses)
+    }
+
+    /**
+     * Full detail of one order, only if it belongs to the authenticated user's store (null otherwise,
+     * so callers can answer 404 without leaking that the order exists).
+     */
+    suspend fun getOrderDetail(userId: Int, orderId: Int): OrderDetailResponse? {
+        val store = storeRepository.getStoreByUser(userId) ?: return null
+        val order = orderRepository.getOrderDetail(orderId) ?: return null
+        return order.takeIf { it.storeId == store.id }
     }
 
     /** Global highest sequence; clients use it to know where the stream is. */

@@ -6,6 +6,7 @@ import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.eq
 import org.jetbrains.exposed.v1.core.greater
+import org.jetbrains.exposed.v1.core.inList
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -17,9 +18,14 @@ class OrderDao {
         Orders.selectAll().where { Orders.id eq id }.singleOrNull()?.toEntity()
     }
 
-    fun findByStoreId(storeId: Int): List<OrderEntity> = transaction {
-        Orders.selectAll().where { Orders.storeId eq storeId }.orderBy(Orders.sequence, SortOrder.DESC)
-            .map { it.toEntity() }
+    /** Orders of a store, newest first. Empty [statuses] means "all statuses". */
+    fun findByStoreId(storeId: Int, statuses: List<OrderStatus> = emptyList()): List<OrderEntity> = transaction {
+        val rows = if (statuses.isEmpty()) {
+            Orders.selectAll().where { Orders.storeId eq storeId }
+        } else {
+            Orders.selectAll().where { (Orders.storeId eq storeId) and (Orders.status inList statuses) }
+        }
+        rows.orderBy(Orders.sequence, SortOrder.DESC).map { it.toEntity() }
     }
 
     fun findAll(): List<OrderEntity> = transaction {

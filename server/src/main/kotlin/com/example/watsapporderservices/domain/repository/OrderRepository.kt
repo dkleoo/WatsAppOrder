@@ -1,6 +1,7 @@
 package com.example.watsapporderservices.domain.repository
 
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.mapper.OrderDetailResponse
 import com.example.watsapporderservices.data.mapper.OrderResponse
 import com.example.watsapporderservices.domain.usecase.OrderDraft
 import com.example.watsapporderservices.domain.usecase.OrderItemDraft
@@ -12,8 +13,11 @@ interface OrderRepository {
 
     suspend fun save(order: OrderDraft): OrderDraft
 
-    /** Orders of a store, newest first. */
-    suspend fun getOrders(storeId: Int): List<OrderResponse>
+    /** Orders of a store, newest first. When [statuses] is not empty only those statuses are returned. */
+    suspend fun getOrders(storeId: Int, statuses: List<OrderStatus> = emptyList()): List<OrderResponse>
+
+    /** One order with its lines, options resolved to names and grouped by step. */
+    suspend fun getOrderDetail(id: Int): OrderDetailResponse?
 
     /** Highest stored sequence (0 when there are no orders). Used by clients to know where they are. */
     suspend fun maxSequence(): Long

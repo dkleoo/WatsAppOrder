@@ -2,6 +2,7 @@ package com.example.watsapporderservices.routes
 
 import com.example.watsapporderservices.data.enum.AuthErrorCode
 import com.example.watsapporderservices.data.enum.OrderErrorCode
+import com.example.watsapporderservices.data.enum.OrderStatus
 import com.example.watsapporderservices.data.mapper.SequenceResponse
 import com.example.watsapporderservices.data.mapper.UpdateOrderStatusRequest
 import com.example.watsapporderservices.data.mapper.toResponse
@@ -55,13 +56,20 @@ fun Route.orderRoutes(
             }
         }
         authenticate(JWT_AUTH_NAME) {
+            // All orders of the store (every status by default). Optional ?status=PENDING,IN_KITCHEN filter.
             get {
                 val userId = call.userId()
                 if (userId == null) {
                     call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
                     return@get
                 }
-                call.respond(useCase.getOrders(userId))
+                val statuses = call.request.queryParameters.getAll("status")
+                    .orEmpty()
+                    .flatMap { it.split(',') }
+                    .mapNotNull { value ->
+                        OrderStatus.entries.firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
+                    }
+                call.respond(useCase.getOrders(userId, statuses))
             }
 
             // How far the stream is (clients store this to resume later).
@@ -82,6 +90,26 @@ fun Route.orderRoutes(
                     return@get
                 }
                 call.respond(useCase.getOrdersSince(userId, since))
+            }
+
+            // Full detail of one order (with resolved steps/options), to paint the order detail card.
+            get("/{id}") {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@get
+                }
+                val id = call.parameters["id"]?.toIntOrNull()
+                if (id == null) {
+                    call.respond(HttpStatusCode.BadRequest, OrderErrorCode.INVALID_ORDER_ID.toResponse())
+                    return@get
+                }
+                val order = useCase.getOrderDetail(userId, id)
+                if (order == null) {
+                    call.respond(HttpStatusCode.NotFound, OrderErrorCode.ORDER_NOT_FOUND.toResponse())
+                    return@get
+                }
+                call.respond(HttpStatusCode.OK, order)
             }
 
             patch("/{id}/status") {
