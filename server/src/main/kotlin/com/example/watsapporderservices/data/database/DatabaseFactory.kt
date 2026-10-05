@@ -81,6 +81,8 @@ object DatabaseFactory {
         listOf("product_id", "product_name", "unit_price", "selected_inputs", "quantity").forEach { column ->
             exec("ALTER TABLE orders DROP COLUMN IF EXISTS $column")
         }
+        // Real-time sequence column (autoincrement) added to pre-existing orders tables.
+        exec("ALTER TABLE orders ADD COLUMN IF NOT EXISTS sequence BIGSERIAL")
         // Old terminal status mapped to the new lifecycle.
         exec("UPDATE orders SET status = 'PENDING' WHERE status = 'PLACED'")
     }
