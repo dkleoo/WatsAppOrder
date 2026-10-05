@@ -18,17 +18,18 @@ class SessionRepositoryImpl(
         val existing = sessionDao.findByCustomerPhone(customerPhone)
         when {
             existing == null -> {
-                val created = sessionDao.insert(customerPhone, storeId, null, SessionState.IDLE, emptyList(), now)
+                val created = sessionDao.insert(customerPhone, storeId, null, SessionState.IDLE, emptyList(), 0, now)
                 created.toInfo(isNew = true)
             }
 
             now - existing.lastActivityAt > SESSION_TTL_MILLIS -> {
-                sessionDao.update(existing.id, storeId, null, SessionState.IDLE, emptyList(), now)
+                sessionDao.update(existing.id, storeId, null, SessionState.IDLE, emptyList(), 0, now)
                 existing.copy(
                     storeId = storeId,
                     orderId = null,
                     state = SessionState.IDLE,
                     optionProductIds = emptyList(),
+                    stepIndex = 0,
                     lastActivityAt = now,
                 ).toInfo(isNew = true)
             }
@@ -40,6 +41,7 @@ class SessionRepositoryImpl(
                     existing.orderId,
                     existing.state,
                     existing.optionProductIds,
+                    existing.stepIndex,
                     now,
                 )
                 existing.copy(storeId = storeId, lastActivityAt = now).toInfo(isNew = false)
@@ -53,9 +55,10 @@ class SessionRepositoryImpl(
         state: SessionState,
         optionProductIds: List<Int>,
         orderId: Int?,
+        stepIndex: Int,
     ) {
         withContext(Dispatchers.IO) {
-            sessionDao.update(sessionId, storeId, orderId, state, optionProductIds, System.currentTimeMillis())
+            sessionDao.update(sessionId, storeId, orderId, state, optionProductIds, stepIndex, System.currentTimeMillis())
         }
     }
 }
@@ -67,6 +70,7 @@ private fun SessionEntity.toInfo(isNew: Boolean): SessionInfo = SessionInfo(
     orderId = orderId,
     state = state,
     optionProductIds = optionProductIds,
+    stepIndex = stepIndex,
     lastActivityAt = lastActivityAt,
     isNew = isNew,
 )

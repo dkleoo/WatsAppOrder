@@ -16,6 +16,8 @@ object Sessions : Table("sessions") {
     val orderId = integer("order_id").references(Orders.id).nullable()
     val state = enumerationByName("state", SESSION_STATE_MAX_LENGTH, SessionState::class)
     val optionIds = varchar("options", SESSION_OPTIONS_MAX_LENGTH).nullable()
+    // Which step of the current product is being configured (0-based).
+    val stepIndex = integer("step_index").default(0)
     val lastActivityAt = long("last_activity_at")
 
     override val primaryKey = PrimaryKey(id)
@@ -28,5 +30,6 @@ data class SessionEntity(
     val orderId: Int?,
     val state: SessionState,
     val optionProductIds: List<Int>,
+    val stepIndex: Int,
     val lastActivityAt: Long,
 )

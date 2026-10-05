@@ -48,6 +48,7 @@ object DatabaseFactory {
             migrateProducts()
             migrateStores()
             migrateOrders()
+            migrateSessions()
             dropLegacyStoreProducts()
         }
     }
@@ -71,6 +72,11 @@ object DatabaseFactory {
     /** Adds the owning user to a pre-existing `stores` table. */
     private fun JdbcTransaction.migrateStores() {
         exec("ALTER TABLE stores ADD COLUMN IF NOT EXISTS user_id INT")
+    }
+
+    /** Adds the current step index to a pre-existing `sessions` table. */
+    private fun JdbcTransaction.migrateSessions() {
+        exec("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS step_index INT DEFAULT 0")
     }
 
     /**

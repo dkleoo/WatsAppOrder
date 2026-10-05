@@ -13,5 +13,6 @@ interface SessionRepository {
         state: SessionState,
         optionProductIds: List<Int>,
         orderId: Int?,
+        stepIndex: Int = 0,
     )
 }

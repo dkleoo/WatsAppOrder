@@ -9,6 +9,7 @@ data class SessionInfo(
     val orderId: Int?,
     val state: SessionState,
     val optionProductIds: List<Int>,
+    val stepIndex: Int,
     val lastActivityAt: Long,
     val isNew: Boolean,
 )

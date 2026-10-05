@@ -19,6 +19,7 @@ class SessionDao {
         orderId: Int?,
         state: SessionState,
         optionProductIds: List<Int>,
+        stepIndex: Int,
         lastActivityAt: Long,
     ): SessionEntity = transaction {
         val id = Sessions.insert {
@@ -27,9 +28,10 @@ class SessionDao {
             it[Sessions.orderId] = orderId
             it[Sessions.state] = state
             it[Sessions.optionIds] = encodeOptions(optionProductIds)
+            it[Sessions.stepIndex] = stepIndex
             it[Sessions.lastActivityAt] = lastActivityAt
         } get Sessions.id
-        SessionEntity(id, customerPhone, storeId, orderId, state, optionProductIds, lastActivityAt)
+        SessionEntity(id, customerPhone, storeId, orderId, state, optionProductIds, stepIndex, lastActivityAt)
     }
 
     fun update(
@@ -38,6 +40,7 @@ class SessionDao {
         orderId: Int?,
         state: SessionState,
         optionProductIds: List<Int>,
+        stepIndex: Int,
         lastActivityAt: Long,
     ): Int = transaction {
         Sessions.update({ Sessions.id eq id }) {
@@ -45,6 +48,7 @@ class SessionDao {
             it[Sessions.orderId] = orderId
             it[Sessions.state] = state
             it[Sessions.optionIds] = encodeOptions(optionProductIds)
+            it[Sessions.stepIndex] = stepIndex
             it[Sessions.lastActivityAt] = lastActivityAt
         }
     }
@@ -57,6 +61,7 @@ private fun ResultRow.toEntity(): SessionEntity = SessionEntity(
     orderId = this[Sessions.orderId],
     state = this[Sessions.state],
     optionProductIds = decodeOptions(this[Sessions.optionIds]),
+    stepIndex = this[Sessions.stepIndex],
     lastActivityAt = this[Sessions.lastActivityAt],
 )
 
