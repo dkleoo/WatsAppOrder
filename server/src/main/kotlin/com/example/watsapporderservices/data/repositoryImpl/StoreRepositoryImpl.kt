@@ -38,7 +38,9 @@ class StoreRepositoryImpl(
     }
 
     override suspend fun getStoreByUser(userId: Int): StoreResponse? = withContext(Dispatchers.IO) {
-        storeDao.findByUserId(userId)?.toResponse()
+        // `users.store_id` is the primary link; fall back to `stores.user_id` for older rows.
+        val byUserColumn = userDao.findById(userId)?.storeId?.let { storeDao.findById(it) }
+        (byUserColumn ?: storeDao.findByUserId(userId))?.toResponse()
     }
 
     override suspend fun create(userId: Int, request: StoreRequest): StoreResult = withContext(Dispatchers.IO) {

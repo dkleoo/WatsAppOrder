@@ -6,6 +6,5 @@ enum class OrderStatus {
     IN_KITCHEN,
     ON_THE_WAY,
     DELIVERED,
-
     CANCELLED,
 }

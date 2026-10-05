@@ -15,6 +15,7 @@ import com.example.watsapporderservices.domain.usecase.OrderUseCase
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.call
+import io.ktor.server.application.log
 import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
@@ -128,8 +129,13 @@ fun Route.orderRoutes(
                 when (val result = useCase.updateStatus(userId, id, request.status)) {
                     is OrderResult.Success -> call.respond(HttpStatusCode.OK, result.order)
 
-                    OrderResult.NotFound ->
+                    OrderResult.NotFound -> {
+                        call.application.log.warn(
+                            "Order status change rejected: order={} user={} status={} (not found or not owned by the user's store)",
+                            id, userId, request.status,
+                        )
                         call.respond(HttpStatusCode.NotFound, OrderErrorCode.ORDER_NOT_FOUND.toResponse())
+                    }
                 }
             }
         }
