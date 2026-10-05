@@ -40,7 +40,11 @@ class OrderUseCase(
 
     suspend fun storeIdOf(userId: Int): Int? = storeRepository.getStoreByUser(userId)?.id
 
-    suspend fun updateStatus(id: Int, status: OrderStatus): OrderResult {
+    /** Changes an order's status, only if the order belongs to the authenticated user's store. */
+    suspend fun updateStatus(userId: Int, id: Int, status: OrderStatus): OrderResult {
+        val store = storeRepository.getStoreByUser(userId) ?: return OrderResult.NotFound
+        val existing = orderRepository.getOrderDetail(id) ?: return OrderResult.NotFound
+        if (existing.storeId != store.id) return OrderResult.NotFound
         val order = orderRepository.updateStatus(id, status) ?: return OrderResult.NotFound
         return OrderResult.Success(order)
     }

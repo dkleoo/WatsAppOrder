@@ -112,14 +112,20 @@ fun Route.orderRoutes(
                 call.respond(HttpStatusCode.OK, order)
             }
 
+            // Accept (IN_KITCHEN) or reject (CANCELLED) an order; also moves it along the delivery flow.
             patch("/{id}/status") {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@patch
+                }
                 val id = call.parameters["id"]?.toIntOrNull()
                 if (id == null) {
                     call.respond(HttpStatusCode.BadRequest, OrderErrorCode.INVALID_ORDER_ID.toResponse())
                     return@patch
                 }
                 val request = call.receive<UpdateOrderStatusRequest>()
-                when (val result = useCase.updateStatus(id, request.status)) {
+                when (val result = useCase.updateStatus(userId, id, request.status)) {
                     is OrderResult.Success -> call.respond(HttpStatusCode.OK, result.order)
 
                     OrderResult.NotFound ->
