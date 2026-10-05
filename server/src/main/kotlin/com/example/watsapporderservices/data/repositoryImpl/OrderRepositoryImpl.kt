@@ -20,6 +20,7 @@ import com.example.watsapporderservices.domain.usecase.OrderDraft
 import com.example.watsapporderservices.domain.usecase.OrderItemDraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.math.BigDecimal
 
 class OrderRepositoryImpl(
@@ -47,9 +48,11 @@ class OrderRepositoryImpl(
         }
 
     override suspend fun getOrderDetail(id: Int): OrderDetailResponse? = withContext(Dispatchers.IO) {
-        val order = orderDao.findById(id) ?: return@withContext null
-        val items = orderItemDao.findByOrderId(id).map { buildItemDetail(it) }
-        order.toDetailResponse(items)
+        transaction {
+            val order = orderDao.findById(id) ?: return@transaction null
+            val items = orderItemDao.findByOrderId(id).map { buildItemDetail(it) }
+            order.toDetailResponse(items)
+        }
     }
 
     override suspend fun maxSequence(): Long = withContext(Dispatchers.IO) {
@@ -152,7 +155,7 @@ class OrderRepositoryImpl(
         val leftovers = item.selectedInputIds.filterNot { it in matched }.mapNotNull { inputsById[it] }
         if (leftovers.isEmpty()) return grouped
         return grouped + OrderItemStepResponse(
-            stepId = null,
+            stepId = 0,
             name = item.stepName ?: "Opciones",
             position = grouped.size,
             inputs = leftovers.map { it.toDetailInput() },

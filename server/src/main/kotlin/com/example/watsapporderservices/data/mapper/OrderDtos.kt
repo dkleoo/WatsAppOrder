@@ -48,7 +48,7 @@ data class OrderItemInputResponse(
 /** The options chosen for one of the product's steps (e.g. "ENTRADA (SOPA)"). */
 @Serializable
 data class OrderItemStepResponse(
-    val stepId: Int? = null,
+    val stepId: Int = 0,
     val name: String,
     val position: Int = 0,
     val inputs: List<OrderItemInputResponse> = emptyList(),
