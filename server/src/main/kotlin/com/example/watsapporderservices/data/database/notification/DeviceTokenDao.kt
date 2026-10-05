@@ -39,6 +39,11 @@ class DeviceTokenDao {
     fun delete(token: String) = transaction {
         DeviceTokens.deleteWhere { DeviceTokens.token eq token }
     }
+
+    /** Removes every token registered for a user (used when the client reports no token). */
+    fun deleteByUserId(userId: Int) = transaction {
+        DeviceTokens.deleteWhere { DeviceTokens.userId eq userId }
+    }
 }
 
 private fun ResultRow.toEntity(): DeviceTokenEntity = DeviceTokenEntity(

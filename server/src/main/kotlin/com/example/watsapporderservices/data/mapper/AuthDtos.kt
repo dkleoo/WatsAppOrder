@@ -10,12 +10,16 @@ data class RegisterRequest(
     val email: String,
     val password: String,
     val name: String,
+    /** Optional FCM device token. Empty string is accepted and means "no token". */
+    val deviceToken: String? = null,
 )
 
 @Serializable
 data class LoginRequest(
     val email: String,
     val password: String,
+    /** Optional FCM device token. Empty string is accepted and means "no token". */
+    val deviceToken: String? = null,
 )
 
 @Serializable
@@ -41,6 +45,12 @@ data class UserResponse(
     val email: String,
     val name: String,
     val storeId: Int? = null,
+)
+
+@Serializable
+data class DeviceTokenRequest(
+    /** New FCM token. Send null or an empty string to clear the stored token. */
+    val deviceToken: String? = null,
 )
 
 @Serializable

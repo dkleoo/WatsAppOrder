@@ -2,6 +2,7 @@ package com.example.watsapporderservices.routes
 
 import com.example.watsapporderservices.data.enum.AuthErrorCode
 import com.example.watsapporderservices.data.mapper.AuthResponse
+import com.example.watsapporderservices.data.mapper.DeviceTokenRequest
 import com.example.watsapporderservices.data.mapper.FederatedAuthRequest
 import com.example.watsapporderservices.data.mapper.LoginRequest
 import com.example.watsapporderservices.data.mapper.RegisterRequest
@@ -22,6 +23,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.put
 import io.ktor.server.routing.route
 
 fun Route.authRoutes(useCase: AuthUseCase) {
@@ -62,6 +64,22 @@ fun Route.authRoutes(useCase: AuthUseCase) {
                     return@post
                 }
                 respondAuth(call, useCase.refresh(userId))
+            }
+
+            // Called by the client on Firebase's onNewToken so rotation does not wait for the next login.
+            // A null/empty deviceToken clears the stored token.
+            put("/me/device-token") {
+                val userId = call.userId()
+                if (userId == null) {
+                    call.respond(HttpStatusCode.Unauthorized, AuthErrorCode.UNAUTHORIZED.toResponse())
+                    return@put
+                }
+                val deviceToken = call.receive<DeviceTokenRequest>().deviceToken
+                if (!useCase.updateDeviceToken(userId, deviceToken)) {
+                    call.respond(HttpStatusCode.NotFound, AuthErrorCode.USER_NOT_FOUND.toResponse())
+                    return@put
+                }
+                call.respond(HttpStatusCode.NoContent)
             }
         }
     }

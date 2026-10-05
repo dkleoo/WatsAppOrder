@@ -53,7 +53,7 @@ class AuthRepositoryImpl(
         val user = withContext(Dispatchers.IO) {
             createUserWithStore(email, name, passwordHash, firebaseUid = null, provider = null)
         }
-        return success(user)
+        return successWithDevice(user, request.deviceToken)
     }
 
     override suspend fun login(request: LoginRequest): AuthResult {
@@ -66,7 +66,7 @@ class AuthRepositoryImpl(
         if (!passwordHasher.verify(request.password, user.passwordHash)) {
             return AuthResult.InvalidCredentials
         }
-        return success(user)
+        return successWithDevice(user, request.deviceToken)
     }
 
     override suspend fun federated(request: FederatedAuthRequest): AuthResult {
@@ -124,6 +124,20 @@ class AuthRepositoryImpl(
         val user = withContext(Dispatchers.IO) { userDao.findById(userId) }
             ?: return AuthResult.InvalidCredentials
         return success(user)
+    }
+
+    override suspend fun updateDeviceToken(userId: Int, deviceToken: String?): Boolean {
+        val user = withContext(Dispatchers.IO) { userDao.findById(userId) }
+            ?: return false
+        val token = deviceToken?.trim().orEmpty()
+        withContext(Dispatchers.IO) {
+            if (token.isEmpty()) {
+                deviceTokenDao.deleteByUserId(user.id)
+            } else {
+                deviceTokenDao.upsert(user.id, token)
+            }
+        }
+        return true
     }
 
     /**

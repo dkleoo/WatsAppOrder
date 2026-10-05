@@ -16,4 +16,7 @@ class AuthUseCase(private val repository: AuthRepository) {
     suspend fun profile(userId: Int): UserResponse? = repository.profile(userId)
 
     suspend fun refresh(userId: Int): AuthResult = repository.refresh(userId)
+
+    suspend fun updateDeviceToken(userId: Int, deviceToken: String?): Boolean =
+        repository.updateDeviceToken(userId, deviceToken)
 }
