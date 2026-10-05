@@ -3,6 +3,7 @@ package com.example.watsapporderservices.data.repositoryImpl
 import com.example.watsapporderservices.data.enum.OrderStatus
 import com.example.watsapporderservices.data.enum.SessionState
 import com.example.watsapporderservices.data.mapper.ProductResponse
+import com.example.watsapporderservices.data.mapper.StepResponse
 import com.example.watsapporderservices.data.mapper.StoreResponse
 import com.example.watsapporderservices.data.mapper.WhatsAppWebhookPayload
 import com.example.watsapporderservices.data.realtime.OrderSocketManager
@@ -43,9 +44,10 @@ private const val QUESTION_SYSTEM_PROMPT =
     "Eres el asistente de pedidos de una tienda por WhatsApp. Devuelve SOLO una pregunta breve y clara, " +
         "sin listar productos y sin inventar datos."
 
-// Interactive ids: "product:<id>", "step:<id>", "more:<page>", "confirm:yes", "confirm:no", "pay:*".
+// Interactive ids: "product:<id>", "step:<id>", "steps:done", "more:<page>", "confirm:yes", "confirm:no", "pay:*".
 private const val PRODUCT_ID_PREFIX = "product:"
 private const val STEP_ID_PREFIX = "step:"
+private const val STEPS_DONE_ID = "steps:done"
 private const val MORE_ID_PREFIX = "more:"
 private const val CONFIRM_YES_ID = "confirm:yes"
 private const val CONFIRM_NO_ID = "confirm:no"
@@ -213,36 +215,73 @@ class WebhookRepositoryImpl(
         return startProduct(session, product)
     }
 
-    /** Multi-choice step: the client can pick several steps (comma-separated) in one reply. */
+    /**
+     * Multi-choice step: the client taps steps (accumulated across messages) and presses "Listo" to finish,
+     * or types several numbers (e.g. "1,3"). The current order id is taken from the loaded order, never from
+     * the (possibly stale) session snapshot.
+     */
     private suspend fun handleStepSelection(
         session: SessionInfo,
         text: String?,
         interactiveId: String?,
     ): Reply {
-        val item = loadLastItem(session)
-            ?: return restartOrder(session, "Se reinició tu pedido.")
-        val chosen = mutableListOf<Int>()
-        if (interactiveId != null) {
-            stepIdFrom(interactiveId)?.let { chosen += it }
-        } else if (text != null) {
-            parseNumbers(text).mapNotNullTo(chosen) { n -> session.optionProductIds.getOrNull(n - 1) }
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val item = order.items.lastOrNull() ?: return restartOrder(session, "Se reinició tu pedido.")
+
+        // Safety: if the product has no steps, move on to quantity instead of getting stuck.
+        val productSteps = item.productId?.let { productRepository.getProduct(it)?.steps }.orEmpty()
+        if (productSteps.isEmpty()) {
+            saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), order.id)
+            return Reply.Text(ask("pide la cantidad que desea", "¿Cuántos deseas?"))
         }
-        if (chosen.isEmpty()) return Reply.Text("Elige al menos una opción de la lista.")
-        val stepName = loadStepNames(session, chosen).firstOrNull()
-        orderRepository.updateItem(item.copy(selectedInputIds = chosen.distinct(), stepName = stepName))
-        saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), session.orderId)
-        return Reply.Text(ask("pide la cantidad que desea", "¿Cuántos deseas?"))
+
+        if (interactiveId == STEPS_DONE_ID || text?.trim()?.equals("listo", ignoreCase = true) == true) {
+            if (item.selectedInputIds.isEmpty()) {
+                return Reply.Text("Elige al menos una opción de la lista.")
+            }
+            orderRepository.updateItem(item.copy(selectedInputIds = item.selectedInputIds))
+            saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), order.id)
+            return Reply.Text(ask("pide la cantidad que desea", "¿Cuántos deseas?"))
+        }
+
+        val newlySelected = mutableListOf<Int>()
+        if (interactiveId != null) {
+            stepIdFrom(interactiveId)?.let { newlySelected += it }
+        } else if (text != null) {
+            parseNumbers(text).mapNotNullTo(newlySelected) { n -> session.optionProductIds.getOrNull(n - 1) }
+        }
+        if (newlySelected.isEmpty()) return Reply.Text("Elige las opciones de la lista o responde *listo*.")
+
+        val accumulated = (item.selectedInputIds + newlySelected).distinct()
+        val stepName = loadStepNames(session, accumulated).firstOrNull()
+        orderRepository.updateItem(item.copy(selectedInputIds = accumulated, stepName = stepName))
+        saveState(session, SessionState.SELECTING_STEP, productSteps.map { it.id }, order.id)
+        // Re-send the list so the client can keep adding options or tap "Listo".
+        val options = productSteps.map { MessageOption(id = "$STEP_ID_PREFIX${it.id}", title = it.name) }
+                .toMutableList()
+            options += MessageOption(id = STEPS_DONE_ID, title = "Listo")
+        val chosenNames = stepNameList(productSteps, accumulated)
+        return Reply.List(
+            body = "Seleccionaste: $chosenNames.\nElige más opciones o toca *Listo*.",
+            buttonText = "Elegir",
+            rows = options,
+            paged = false,
+        )
     }
 
+    private fun stepNameList(steps: List<StepResponse>, chosen: List<Int>): String =
+        steps.filter { it.id in chosen }.map { it.name }.joinToString(", ").ifBlank { "-" }
+
     private suspend fun handleQuantity(session: SessionInfo, text: String?): Reply {
-        val item = loadLastItem(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val order = loadOrder(session) ?: return restartOrder(session, "Se reinició tu pedido.")
+        val item = order.items.lastOrNull() ?: return restartOrder(session, "Se reinició tu pedido.")
         val quantity = text?.let { parseNumbers(it).firstOrNull() }
         if (quantity == null) return Reply.Text("Indícame un número. ¿Cuántos deseas?")
         if (quantity <= 0) return Reply.Text("La cantidad debe ser mayor a 0. ¿Cuántos deseas?")
         orderRepository.updateItem(item.copy(quantity = quantity))
         // Recompute the running total from the header + all its lines.
         refreshTotal(session)
-        saveState(session, SessionState.CONFIRMING_MORE, emptyList(), session.orderId)
+        saveState(session, SessionState.CONFIRMING_MORE, emptyList(), order.id)
         return moreButtons()
     }
 
@@ -331,18 +370,22 @@ class WebhookRepositoryImpl(
         val steps = product.steps
         if (steps.isNotEmpty()) {
             val options = steps.map { MessageOption(id = "$STEP_ID_PREFIX${it.id}", title = it.name) }
+                .toMutableList()
+            options += MessageOption(id = STEPS_DONE_ID, title = "Listo")
+            saveState(session, SessionState.SELECTING_STEP, steps.map { it.id }, order.id)
             return Reply.List(
-                body = "Elegiste ${product.name}. ¿Qué ${stepLabel(steps.size)} deseas?",
+                body = "Elegiste ${product.name}. ¿Con qué opciones lo deseas?\n" +
+                    "Puedes elegir varias y luego tocar *Listo*.",
                 buttonText = "Elegir",
                 rows = options,
                 paged = false,
             )
         }
-        return askQuantity(session, item)
+        return askQuantity(session, item, order.id)
     }
 
-    private suspend fun askQuantity(session: SessionInfo, item: OrderItemDraft): Reply {
-        saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), session.orderId)
+    private suspend fun askQuantity(session: SessionInfo, item: OrderItemDraft, orderId: Int?): Reply {
+        saveState(session, SessionState.SELECTING_QUANTITY, emptyList(), orderId)
         return Reply.Text("Elegiste ${item.productName} ($ ${item.unitPrice}).\n" +
             ask("pide la cantidad que desea", "¿Cuántos deseas?"))
     }
@@ -361,8 +404,6 @@ class WebhookRepositoryImpl(
         ),
         paged = false,
     )
-
-    private fun stepLabel(count: Int): String = if (count == 1) "opción" else "opciones"
 
     /** Loads the last line added to the current order. */
     private suspend fun loadLastItem(session: SessionInfo): OrderItemDraft? =
