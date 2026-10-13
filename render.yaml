@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /
+    healthCheckPath: /webhook/status
     envVars:
       - key: DATABASE_URL
         value: jdbc:postgresql://dpg-davsleh42hec73e1cotg-a:5432/watsapporder
