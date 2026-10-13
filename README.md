@@ -109,8 +109,9 @@ Incoming WhatsApp messages are handled by an **LLM agent with tool calling** ins
 The agent queries the database **directly** through in-process tools (no HTTP round-trips) and only asks the
 customer what it actually needs.
 
-- API key from `TOKEN_GROK` (or `GROQ_API_KEY`). Default model `llama-3.3-70b-versatile` (override with
-  `GROQ_MODEL`). `reasoning_effort` is only sent for `gpt-oss` models.
+- API key from `TOKEN_GROK` (or `GROQ_API_KEY`). Default model `openai/gpt-oss-120b` (override with
+  `GROQ_MODEL`). `reasoning_effort` is only sent for `gpt-oss` models. Note: Groq rotates models; check
+  `GET https://api.groq.com/openai/v1/models` if a model stops working.
 - Tools (all read/write the DB through repositories): `buscar_productos`, `ver_producto`,
   `agregar_producto(productoId, cantidad, opciones)`, `quitar_producto`, `ver_pedido`, `info_tienda`,
   `confirmar_pedido(tipo, nombre, direccion, pago)`.

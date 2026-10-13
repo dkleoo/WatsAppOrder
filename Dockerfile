@@ -1,7 +1,9 @@
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY . .
-RUN chmod +x gradlew && ./gradlew :server:buildFatJar --no-daemon
+RUN chmod +x gradlew \
+    && (./gradlew :server:buildFatJar --no-daemon --stacktrace \
+        || ./gradlew :server:buildFatJar --no-daemon --stacktrace)
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app

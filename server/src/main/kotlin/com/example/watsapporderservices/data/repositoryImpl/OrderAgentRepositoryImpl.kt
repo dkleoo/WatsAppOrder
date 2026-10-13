@@ -107,11 +107,15 @@ class OrderAgentRepositoryImpl(
                     messages += AiMessage(role = ROLE_ASSISTANT, toolCalls = step.calls)
                     step.calls.forEach { call ->
                         val output = executeTool(call, context)
+                        logger.debug("Tool {} -> {}", call.name, output.take(300))
                         messages += AiMessage(role = ROLE_TOOL, content = output, toolCallId = call.id)
                     }
                 }
 
-                AiChatResult.NotConfigured -> return NOT_CONFIGURED_REPLY
+                AiChatResult.NotConfigured -> {
+                    logger.warn("Groq is not configured (TOKEN_GROK missing): answering with the fallback")
+                    return NOT_CONFIGURED_REPLY
+                }
 
                 is AiChatResult.Failed -> {
                     logger.warn("Groq chat failed: {}", step.detail)
@@ -119,6 +123,7 @@ class OrderAgentRepositoryImpl(
                 }
             }
         }
+        logger.warn("Agent gave up after {} tool iterations without a final answer", MAX_TOOL_ITERATIONS)
         return FALLBACK_REPLY
     }
 
