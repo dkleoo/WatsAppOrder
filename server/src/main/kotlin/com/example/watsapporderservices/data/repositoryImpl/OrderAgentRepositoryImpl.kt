@@ -73,9 +73,6 @@ class OrderAgentRepositoryImpl(
 
     override suspend fun handleMessage(customerPhone: String, store: StoreResponse?, text: String) {
         val session = sessionRepository.resume(customerPhone, store?.id)
-        if (session.isNew && store != null) {
-            sendText(customerPhone, initialGreeting(store))
-        }
         sessionRepository.appendMessage(session.id, ROLE_USER, text)
         val context = AgentContext(
             customerPhone = customerPhone,
@@ -129,15 +126,10 @@ class OrderAgentRepositoryImpl(
 
     private fun systemMessage(context: AgentContext): String = buildString {
         append(systemPrompt)
-        append("\n\nContexto de la tienda:")
-        val store = context.store
-        if (store != null) {
-            append("\n- Dirección: ${store.address}")
-            append("\n- Teléfono: ${store.phone}")
-        } else {
-            append("\n- No configurada")
-        }
         append("\n\nUsa las herramientas para consultar productos y para registrar el pedido. Nunca inventes precios.")
+        if (context.store == null) {
+            append("\nLa tienda no está configurada: si el cliente quiere pedir, avísale que no está disponible.")
+        }
     }
 
     private suspend fun executeTool(call: AiToolCall, context: AgentContext): String =
@@ -330,9 +322,6 @@ class OrderAgentRepositoryImpl(
         order.deliveryAddress?.let { append("Dirección: $it\n") }
         order.paymentType?.let { append("Pago: $it\n") }
     }
-
-    private fun initialGreeting(store: StoreResponse): String =
-        "${store.welcomeMessage}\n\n📍 ${store.address}\n📞 ${store.phone}\n\n¿Qué deseas ordenar?"
 
     private fun parseArgs(raw: String): JsonObject =
         runCatching { json.parseToJsonElement(raw.ifBlank { "{}" }) as? JsonObject }.getOrNull()
