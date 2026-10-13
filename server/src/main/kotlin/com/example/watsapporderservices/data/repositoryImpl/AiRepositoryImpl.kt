@@ -25,6 +25,8 @@ import java.time.Duration
 private const val REQUEST_TIMEOUT_SECONDS = 60L
 private const val ERROR_BODY_SNIPPET = 300
 private const val TOOL_CHOICE_AUTO = "auto"
+private const val USER_AGENT = "watsapporder/1.0"
+private const val SESSION_HEADER = "x-opencode-session"
 
 /**
  * OpenCode Zen client (OpenAI-compatible chat completions). Sends the conversation plus the tool
@@ -42,10 +44,10 @@ class AiRepositoryImpl(
         .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
         .build()
 
-    override suspend fun chat(messages: List<AiMessage>, tools: List<AiTool>): AiChatResult {
+    override suspend fun chat(sessionId: String, messages: List<AiMessage>, tools: List<AiTool>): AiChatResult {
         if (!config.isConfigured) return AiChatResult.NotConfigured
 
-        return when (val result = send(messages.map { it.toChat() }, tools)) {
+        return when (val result = send(sessionId, messages.map { it.toChat() }, tools)) {
             is SendResult.Ok -> {
                 if (result.toolCalls.isNotEmpty()) {
                     AiChatResult.ToolCalls(result.toolCalls)
@@ -63,7 +65,11 @@ class AiRepositoryImpl(
         }
     }
 
-    private suspend fun send(messages: List<ChatMessageDto>, tools: List<AiTool>?): SendResult {
+    private suspend fun send(
+        sessionId: String,
+        messages: List<ChatMessageDto>,
+        tools: List<AiTool>?,
+    ): SendResult {
         val body = json.encodeToString(
             ChatCompletionRequest.serializer(),
             ChatCompletionRequest(
@@ -75,12 +81,15 @@ class AiRepositoryImpl(
                 toolChoice = TOOL_CHOICE_AUTO.takeIf { !tools.isNullOrEmpty() },
             ),
         )
-        val httpRequest = HttpRequest.newBuilder(URI.create(config.baseUrl))
+        val builder = HttpRequest.newBuilder(URI.create(config.baseUrl))
             .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
             .header("Authorization", "Bearer ${config.apiKey}")
             .header("Content-Type", "application/json")
-            .POST(HttpRequest.BodyPublishers.ofString(body))
-            .build()
+            .header("User-Agent", USER_AGENT)
+        if (sessionId.isNotBlank()) {
+            builder.header(SESSION_HEADER, sessionId)
+        }
+        val httpRequest = builder.POST(HttpRequest.BodyPublishers.ofString(body)).build()
 
         val attempt = withContext(Dispatchers.IO) {
             runCatching { httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString()) }

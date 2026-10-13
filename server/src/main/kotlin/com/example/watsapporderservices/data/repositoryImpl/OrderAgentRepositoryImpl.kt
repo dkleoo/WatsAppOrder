@@ -97,7 +97,7 @@ class OrderAgentRepositoryImpl(
         }
 
         repeat(MAX_TOOL_ITERATIONS) {
-            when (val step = aiRepository.chat(messages, tools)) {
+            when (val step = aiRepository.chat(context.sessionId.toString(), messages, tools)) {
                 is AiChatResult.Message -> return step.content?.takeIf { it.isNotBlank() } ?: FALLBACK_REPLY
 
                 is AiChatResult.ToolCalls -> {
