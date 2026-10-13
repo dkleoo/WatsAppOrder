@@ -32,4 +32,7 @@ interface OrderRepository {
 
     /** Replaces the lines of the order (used to update a configured line). */
     suspend fun updateItem(item: OrderItemDraft): OrderItemDraft
+
+    /** Deletes one line of the order. */
+    suspend fun removeItem(orderId: Int, itemId: Int)
 }

@@ -2,6 +2,7 @@ package com.example.watsapporderservices.data.mapper
 
 import com.example.watsapporderservices.data.enum.OrderErrorCode
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.enum.OrderType
 import com.example.watsapporderservices.domain.usecase.OrderDraft
 import com.example.watsapporderservices.domain.usecase.OrderItemDraft
 import kotlinx.serialization.Serializable
@@ -29,6 +30,7 @@ data class OrderResponse(
     val paymentType: String? = null,
     val total: Double? = null,
     val status: OrderStatus,
+    val orderType: OrderType? = null,
     val items: List<OrderItemResponse> = emptyList(),
 )
 
@@ -76,6 +78,7 @@ data class OrderDetailResponse(
     val paymentType: String? = null,
     val total: Double? = null,
     val status: OrderStatus,
+    val orderType: OrderType? = null,
     val createdAt: Long? = null,
     val updatedAt: Long? = null,
     val items: List<OrderDetailItemResponse> = emptyList(),
@@ -91,6 +94,7 @@ fun OrderDraft.toResponse(): OrderResponse = OrderResponse(
     paymentType = paymentType,
     total = total,
     status = status,
+    orderType = orderType,
     items = items.map { it.toResponse() },
 )
 

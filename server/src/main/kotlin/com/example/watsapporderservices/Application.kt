@@ -2,10 +2,12 @@ package com.example.watsapporderservices
 
 import com.example.watsapporderservices.data.database.DatabaseConfig
 import com.example.watsapporderservices.data.database.DatabaseFactory
+import com.example.watsapporderservices.data.prompt.PromptLoader
 import com.example.watsapporderservices.data.repositoryImpl.AiRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.AuthRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.InputRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.MessageRepositoryImpl
+import com.example.watsapporderservices.data.repositoryImpl.OrderAgentRepositoryImpl
 import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImpl
 import com.example.watsapporderservices.data.security.FirebaseConfig
 import com.example.watsapporderservices.data.security.FirebaseMessagingClient
@@ -22,6 +24,7 @@ import com.example.watsapporderservices.data.database.order.OrderDao
 import com.example.watsapporderservices.data.database.order.OrderItemDao
 import com.example.watsapporderservices.data.database.product.ProductDao
 import com.example.watsapporderservices.data.database.session.SessionDao
+import com.example.watsapporderservices.data.database.session.SessionMessageDao
 import com.example.watsapporderservices.data.database.step.StepDao
 import com.example.watsapporderservices.data.database.step.StepInputDao
 import com.example.watsapporderservices.data.database.store.StoreDao
@@ -59,6 +62,11 @@ import io.ktor.server.netty.EngineMain
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+
+private const val ORDER_AGENT_PROMPT_PATH = "prompts/order-agent.md"
+private const val DEFAULT_ORDER_AGENT_PROMPT =
+    "Eres quien recibe pedidos de la tienda por WhatsApp. Breve, amable, en español. " +
+        "Usa las herramientas para consultar productos y registrar el pedido; nunca inventes precios."
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
@@ -98,7 +106,7 @@ fun Application.module() {
         storeDao,
         userDao,
     )
-    val sessionRepository = SessionRepositoryImpl(SessionDao())
+    val sessionRepository = SessionRepositoryImpl(SessionDao(), SessionMessageDao())
     val orderRepository = OrderRepositoryImpl(OrderDao(), OrderItemDao(), StepDao(), StepInputDao(), InputDao())
     val orderSocketManager = OrderSocketManager()
     val pushConfig = PushConfig.from(environment.config, System.getenv())
@@ -107,18 +115,18 @@ fun Application.module() {
         log.warn("FIREBASE_SERVICE_ACCOUNT_JSON is not set: order push notifications are disabled")
     }
     val notificationRepository = NotificationRepositoryImpl(deviceTokenDao, messagingClient)
+    val orderAgentRepository = OrderAgentRepositoryImpl(
+        aiRepository = AiRepositoryImpl(groqConfig),
+        messageRepository = messageRepository,
+        productRepository = productRepository,
+        orderRepository = orderRepository,
+        sessionRepository = sessionRepository,
+        socketManager = orderSocketManager,
+        notificationRepository = notificationRepository,
+        systemPrompt = PromptLoader.load(ORDER_AGENT_PROMPT_PATH, DEFAULT_ORDER_AGENT_PROMPT),
+    )
     val webhookUseCase = WebhookUseCase(
-        WebhookRepositoryImpl(
-            whatsAppConfig,
-            AiRepositoryImpl(groqConfig),
-            messageRepository,
-            storeRepository,
-            productRepository,
-            sessionRepository,
-            orderRepository,
-            orderSocketManager,
-            notificationRepository,
-        ),
+        WebhookRepositoryImpl(whatsAppConfig, storeRepository, orderAgentRepository),
     )
     val messageUseCase = MessageUseCase(messageRepository)
     val productUseCase = ProductUseCase(productRepository)

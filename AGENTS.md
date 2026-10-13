@@ -122,6 +122,18 @@ Orden típico al añadir un módulo:
 
 ---
 
+## Agente tomador de pedidos (WhatsApp)
+
+El webhook delega en `OrderAgentRepositoryImpl`, que conversa con el cliente usando **tool calling** de Groq y
+consulta la base **directo** vía repositorios (sin endpoints HTTP). Reemplaza a la antigua máquina de estados.
+
+- Persona / system prompt: `server/src/main/resources/prompts/order-agent.md` (se carga con `PromptLoader`).
+- Historial por cliente: tabla `session_messages` (últimos 20 mensajes al modelo); la sesión expira a los 30 min.
+- Tools: `buscar_productos`, `ver_producto`, `agregar_producto`, `quitar_producto`, `ver_pedido`, `info_tienda`,
+  `confirmar_pedido`.
+- `OrderType` (`LOCAL` / `DELIVERY`) se guarda en `orders.order_type`; la migración la aplica `DatabaseFactory`.
+- `WebhookRepositoryImpl` ya **no** usa `SessionState` ni interactivos: solo verifica, deduplica y delega en el agente.
+
 ## Patrones ya usados (no romper sin motivo)
 
 - Los **repositorios de dominio** pueden importar DTOs de `data/mapper/` en firmas (p. ej. `RegisterRequest`, `OrderResponse`). No mover esos tipos a `domain/` salvo refactor explícito.

@@ -4,6 +4,7 @@ import com.example.watsapporderservices.data.database.product.MONEY_PRECISION
 import com.example.watsapporderservices.data.database.product.MONEY_SCALE
 import com.example.watsapporderservices.data.database.store.Stores
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.enum.OrderType
 import org.jetbrains.exposed.v1.core.Table
 import java.math.BigDecimal
 
@@ -12,6 +13,7 @@ const val ORDER_CUSTOMER_NAME_MAX_LENGTH = 160
 const val ORDER_ADDRESS_MAX_LENGTH = 300
 const val ORDER_PAYMENT_MAX_LENGTH = 60
 const val ORDER_STATUS_MAX_LENGTH = 20
+const val ORDER_TYPE_MAX_LENGTH = 20
 
 /** Order header. Lines live in `order_items`. */
 object Orders : Table("orders") {
@@ -25,6 +27,7 @@ object Orders : Table("orders") {
     val paymentType = varchar("payment_type", ORDER_PAYMENT_MAX_LENGTH).nullable()
     val total = decimal("total", MONEY_PRECISION, MONEY_SCALE).nullable()
     val status = enumerationByName("status", ORDER_STATUS_MAX_LENGTH, OrderStatus::class)
+    val orderType = enumerationByName("order_type", ORDER_TYPE_MAX_LENGTH, OrderType::class).nullable()
     val createdAt = long("created_at")
     val updatedAt = long("updated_at")
 
@@ -41,6 +44,7 @@ data class OrderEntity(
     val paymentType: String?,
     val total: BigDecimal?,
     val status: OrderStatus,
+    val orderType: OrderType? = null,
     val createdAt: Long = 0L,
     val updatedAt: Long = 0L,
 )

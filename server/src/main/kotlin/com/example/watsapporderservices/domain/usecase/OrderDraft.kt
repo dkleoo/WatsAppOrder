@@ -1,6 +1,8 @@
 package com.example.watsapporderservices.domain.usecase
 
 import com.example.watsapporderservices.data.enum.OrderStatus
+import com.example.watsapporderservices.data.enum.OrderType
+import com.example.watsapporderservices.domain.usecase.OrderItemDraft
 
 data class OrderDraft(
     val id: Int?,
@@ -12,6 +14,7 @@ data class OrderDraft(
     val paymentType: String?,
     val total: Double?,
     val status: OrderStatus,
+    val orderType: OrderType? = null,
     val items: List<OrderItemDraft> = emptyList(),
 )
 

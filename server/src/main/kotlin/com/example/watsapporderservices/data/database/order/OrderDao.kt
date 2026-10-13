@@ -74,6 +74,7 @@ class OrderDao {
             it[paymentType] = order.paymentType
             it[total] = order.total
             it[status] = order.status
+            it[orderType] = order.orderType
             it[updatedAt] = now
         }
     }
@@ -89,6 +90,7 @@ private fun ResultRow.toEntity(): OrderEntity = OrderEntity(
     paymentType = this[Orders.paymentType],
     total = this[Orders.total],
     status = this[Orders.status],
+    orderType = this[Orders.orderType],
     createdAt = this[Orders.createdAt],
     updatedAt = this[Orders.updatedAt],
 )

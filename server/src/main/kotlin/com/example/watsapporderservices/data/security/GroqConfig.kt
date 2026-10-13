@@ -13,7 +13,7 @@ data class GroqConfig(
     val isConfigured: Boolean get() = apiKey.isNotBlank()
 
     companion object {
-        private const val DEFAULT_MODEL = "openai/gpt-oss-120b"
+        private const val DEFAULT_MODEL = "llama-3.3-70b-versatile"
         private const val DEFAULT_TEMPERATURE = 1.0
         private const val DEFAULT_MAX_COMPLETION_TOKENS = 2048
         private const val DEFAULT_TOP_P = 1.0

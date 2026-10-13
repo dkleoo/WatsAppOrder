@@ -111,6 +111,12 @@ class OrderRepositoryImpl(
         item
     }
 
+    override suspend fun removeItem(orderId: Int, itemId: Int) {
+        withContext(Dispatchers.IO) {
+            orderItemDao.deleteById(itemId)
+        }
+    }
+
     /**
      * Resolves an order line's chosen options to names/prices and groups them by the product's steps,
      * so the UI can render e.g. "ENTRADA (SOPA): Sopa Marinera Especial +$2.00".
@@ -179,6 +185,7 @@ private fun OrderEntity.toDetailResponse(items: List<OrderDetailItemResponse>): 
     paymentType = paymentType,
     total = total?.toDouble(),
     status = status,
+    orderType = orderType,
     createdAt = createdAt,
     updatedAt = updatedAt,
     items = items,
@@ -194,6 +201,7 @@ private fun OrderEntity.toDraft(items: List<OrderItemDraft>): OrderDraft = Order
     paymentType = paymentType,
     total = total?.toDouble(),
     status = status,
+    orderType = orderType,
     items = items,
 )
 
@@ -217,4 +225,5 @@ private fun OrderDraft.toEntity(): OrderEntity = OrderEntity(
     paymentType = paymentType,
     total = total?.let { BigDecimal.valueOf(it) },
     status = status,
+    orderType = orderType,
 )

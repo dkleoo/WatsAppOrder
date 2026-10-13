@@ -103,32 +103,35 @@ Success (`200`):
 Errors: `400` for invalid `extension`/`number`/`message`, `503` when the access token or phone number id is not
 configured, `502` when the Graph API rejects the request (the response includes a `detail` field).
 
-### AI auto-reply (Groq)
+### Order-taking agent (Groq + tools)
 
-When `POST /webhook` receives an incoming WhatsApp text message, the server acknowledges Meta immediately and,
-in the background, asks the Groq model for a reply and sends it back through the same send logic used by
-`POST /messages`. The reply is sent to the message sender (`from`).
+Incoming WhatsApp messages are handled by an **LLM agent with tool calling** instead of a scripted state machine.
+The agent queries the database **directly** through in-process tools (no HTTP round-trips) and only asks the
+customer what it actually needs.
 
-- The API key is read from `TOKEN_GROK` (or `GROQ_API_KEY`).
-- Default model: `openai/gpt-oss-120b`, with `temperature=1`, `max_completion_tokens=2048`, `top_p=1` and
-  `reasoning_effort=medium` (all overridable with `GROQ_MODEL`, `GROQ_TEMPERATURE`,
-  `GROQ_MAX_COMPLETION_TOKENS`, `GROQ_TOP_P`, `GROQ_REASONING_EFFORT`).
+- API key from `TOKEN_GROK` (or `GROQ_API_KEY`). Default model `llama-3.3-70b-versatile` (override with
+  `GROQ_MODEL`). `reasoning_effort` is only sent for `gpt-oss` models.
+- Tools (all read/write the DB through repositories): `buscar_productos`, `ver_producto`,
+  `agregar_producto(productoId, cantidad, opciones)`, `quitar_producto`, `ver_pedido`, `info_tienda`,
+  `confirmar_pedido(tipo, nombre, direccion, pago)`.
+- The persona/rules live in [`prompts/order-agent.md`](./server/src/main/resources/prompts/order-agent.md) and are
+  loaded as the system prompt at startup.
+- Conversation history is stored per customer in `session_messages` (last 20 messages sent to the model); the
+  session expires after **30 minutes** of inactivity.
 - Duplicate deliveries of the same Meta message id are ignored.
+- Prices are never invented: the agent must call the tools. Product options (steps/inputs) are asked only when
+  the product has them and the customer did not specify.
 
-The conversation is stateful per customer through the `sessions` table:
+Conversation flow:
 
-- **On the first message of a session** the bot sends the store's welcome message, the address and the phone
-  **once**, tells the client they can type **`mi catálogo`** at any time, and asks **"¿Qué deseas ordenar?"**
-- If there are **no messages for 2 minutes**, the session resets and the opening message is sent again.
-- Products are shown as an **interactive WhatsApp list** (not numbered text). Each row id is `product:<id>`, so
-  the selection is resolved by id and cannot be mistyped. Lists hold at most 10 rows, so when there are more
-  products the list is **paged**: a "Ver más productos" row (`more:<page>`) loads the next page.
-- When a product has **steps/ingredients**, they are shown as another interactive list.
-- After each configured item the bot asks **"¿Deseas agregar algo más?"** with **Sí / No** reply buttons
-  (`confirm:yes` / `confirm:no`).
-- `mi catálogo` (or `catálogo`, `menu`, `qué venden`, ...) shows every product in a paged interactive list, at any
-  point in the conversation.
-- The webhook reads `text` **and** `interactive` (`list_reply.id`, `button_reply.id`).
+1. The customer asks for one or more products ("quiero una gaseosa y unas papas"); the agent looks each one up
+   and adds it. It asks again only when needed (not found, ambiguous, missing options or quantity).
+2. When done adding, it asks **"¿Quieres algo más?"**.
+3. Then it asks **"¿Es para comer en el lugar o para domicilio?"**.
+   - **Local**: it shows a summary and asks to confirm; on "sí" the order is created.
+   - **Domicilio**: it asks for the receiver's **name**, the **address** and the **payment method**
+     (*Efectivo* / *Transferencia*), then shows a summary and asks to confirm.
+4. Confirmed orders are saved as `PENDING`, broadcast over the live socket and pushed to the store.
 
 ### Orders
 
@@ -173,16 +176,9 @@ Flow: the client connects to `/orders/ws`, stores the last `sequence` it saw, an
 and calls `/orders/since/{lastSequence}` to fetch what it missed. A new order is broadcast to every socket of that
 store the moment it is placed.
 
-Order flow:
-
-1. The client picks a product (interactive list). If the product has **steps**, a second interactive list shows
-   the **step names** (multi-choice: the client can pick several).
-2. The bot asks the **quantity**, then **"¿Deseas agregar algo más?"** with **Sí / No** buttons. Choosing *Sí*
-   adds another product to the same order.
-3. When *No*, the bot asks the **name**, the **delivery address** and the **payment type** (interactive list:
-   *Efectivo* / *Transferencia*).
-4. The order is saved with status **PENDING**, the **total** is computed from all lines, and the client is given
-   the **order number** (the autoincrement id): *"Tu pedido #12 fue registrado"*.
+Order flow (WhatsApp): the customer chats with the order-taking agent, which builds the order with the tools
+described above and creates it after confirmation with status **PENDING**. The total is computed from all lines
+(product price plus the chosen inputs). The client is given the **order number** (the autoincrement id).
 
 ### Stores and product filtering
 

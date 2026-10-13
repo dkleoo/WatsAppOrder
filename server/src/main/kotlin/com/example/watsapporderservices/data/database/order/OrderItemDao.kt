@@ -47,6 +47,10 @@ class OrderItemDao {
     fun deleteByOrderId(orderId: Int) = transaction {
         OrderItems.deleteWhere { OrderItems.orderId eq orderId }
     }
+
+    fun deleteById(id: Int): Int = transaction {
+        OrderItems.deleteWhere { OrderItems.id eq id }
+    }
 }
 
 private fun ResultRow.toEntity(): OrderItemEntity = OrderItemEntity(

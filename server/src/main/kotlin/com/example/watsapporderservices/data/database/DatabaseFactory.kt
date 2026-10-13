@@ -5,6 +5,7 @@ import com.example.watsapporderservices.data.database.notification.DeviceTokens
 import com.example.watsapporderservices.data.database.order.OrderItems
 import com.example.watsapporderservices.data.database.order.Orders
 import com.example.watsapporderservices.data.database.product.Products
+import com.example.watsapporderservices.data.database.session.SessionMessages
 import com.example.watsapporderservices.data.database.session.Sessions
 import com.example.watsapporderservices.data.database.step.StepInputs
 import com.example.watsapporderservices.data.database.step.Steps
@@ -44,6 +45,7 @@ object DatabaseFactory {
                 Orders,
                 OrderItems,
                 Sessions,
+                SessionMessages,
                 DeviceTokens,
             )
             migrateUsers()
@@ -91,6 +93,8 @@ object DatabaseFactory {
         }
         // Real-time sequence column (autoincrement) added to pre-existing orders tables.
         exec("ALTER TABLE orders ADD COLUMN IF NOT EXISTS sequence BIGSERIAL")
+        // Local vs delivery marker added to pre-existing orders tables.
+        exec("ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_type VARCHAR(20)")
         // Old terminal status mapped to the new lifecycle.
         exec("UPDATE orders SET status = 'PENDING' WHERE status = 'PLACED'")
     }
