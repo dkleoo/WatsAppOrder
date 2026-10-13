@@ -15,9 +15,9 @@ data class GroqConfig(
     companion object {
         private const val DEFAULT_MODEL = "openai/gpt-oss-120b"
         private const val DEFAULT_TEMPERATURE = 1.0
-        private const val DEFAULT_MAX_COMPLETION_TOKENS = 2048
+        private const val DEFAULT_MAX_COMPLETION_TOKENS = 8192
         private const val DEFAULT_TOP_P = 1.0
-        private const val DEFAULT_REASONING_EFFORT = "medium"
+        private const val DEFAULT_REASONING_EFFORT = "low"
 
         fun from(config: ApplicationConfig, env: Map<String, String>): GroqConfig = GroqConfig(
             apiKey = config.valueOrEnv("groq.apiKey", env, "GROQ_API_KEY", "TOKEN_GROK") ?: "",

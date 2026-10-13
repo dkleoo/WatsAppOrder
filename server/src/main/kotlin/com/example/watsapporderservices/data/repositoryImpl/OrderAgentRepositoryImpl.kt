@@ -277,7 +277,8 @@ class OrderAgentRepositoryImpl(
         )
         sessionRepository.linkOrder(context.sessionId, context.store?.id, null)
         context.orderId = null
-        socketManager.broadcastOrder(placed.toResponse())
+        runCatching { socketManager.broadcastOrder(placed.toResponse()) }
+            .onFailure { logger.warn("Order broadcast failed: {}", it.message) }
         runCatching {
             notificationRepository.notifyNewOrder(
                 storeId = placed.storeId,

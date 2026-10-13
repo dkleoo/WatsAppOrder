@@ -48,7 +48,12 @@ class AiRepositoryImpl(
                 if (result.toolCalls.isNotEmpty()) {
                     AiChatResult.ToolCalls(result.toolCalls)
                 } else {
-                    AiChatResult.Message(result.content?.takeIf { it.isNotBlank() })
+                    val content = result.content?.takeIf { it.isNotBlank() }
+                    if (content == null) {
+                        AiChatResult.Failed("Empty completion (finish_reason=${result.finishReason})")
+                    } else {
+                        AiChatResult.Message(content)
+                    }
                 }
             }
 
@@ -87,12 +92,13 @@ class AiRepositoryImpl(
             return SendResult.Error("HTTP ${response.statusCode()}: ${response.body().take(ERROR_BODY_SNIPPET)}")
         }
 
-        val message = runCatching {
-            json.decodeFromString(GroqChatResponse.serializer(), response.body()).choices?.firstOrNull()?.message
+        val choice = runCatching {
+            json.decodeFromString(GroqChatResponse.serializer(), response.body()).choices?.firstOrNull()
         }.getOrNull() ?: return SendResult.Error("Malformed response from Groq")
 
-        val calls = message.toolCalls.orEmpty().map { AiToolCall(it.id, it.function.name, it.function.arguments) }
-        return SendResult.Ok(message.content, calls)
+        val message = choice.message
+        val calls = message?.toolCalls.orEmpty().map { AiToolCall(it.id, it.function.name, it.function.arguments) }
+        return SendResult.Ok(message?.content, calls, choice.finishReason)
     }
 }
 
@@ -109,7 +115,7 @@ private fun AiTool.toGroq(): GroqTool = GroqTool(
 )
 
 private sealed interface SendResult {
-    data class Ok(val content: String?, val toolCalls: List<AiToolCall>) : SendResult
+    data class Ok(val content: String?, val toolCalls: List<AiToolCall>, val finishReason: String?) : SendResult
 
     data class Error(val detail: String) : SendResult
 }
