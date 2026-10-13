@@ -162,9 +162,9 @@ class OrderAgentRepositoryImpl(
             return if (consulta.isNullOrBlank()) "El catálogo está vacío." else "No encontré productos para \"$consulta\"."
         }
         return buildString {
-            append("Productos (id | nombre | precio | disponible):\n")
+            append("Productos (id | nombre | precio):\n")
             products.take(MAX_CATALOG_ITEMS).forEach {
-                append("- ${it.id} | ${it.name} | $${it.price} | ${if (it.quantity > 0) it.quantity else "agotado"}\n")
+                append("- ${it.id} | ${it.name} | $${it.price}\n")
             }
         }
     }
