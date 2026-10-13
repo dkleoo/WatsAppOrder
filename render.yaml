@@ -20,3 +20,7 @@ services:
         value: "1379699841884103"
       - key: FIREBASE_SERVICE_ACCOUNT_JSON
         sync: false
+      - key: OPENCODE_API_KEY
+        sync: false
+      - key: OPENCODE_MODEL
+        value: deepseek-v4.1-flash

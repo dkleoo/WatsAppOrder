@@ -12,7 +12,7 @@ import com.example.watsapporderservices.data.repositoryImpl.WebhookRepositoryImp
 import com.example.watsapporderservices.data.security.FirebaseConfig
 import com.example.watsapporderservices.data.security.FirebaseMessagingClient
 import com.example.watsapporderservices.data.security.FirebaseTokenVerifier
-import com.example.watsapporderservices.data.security.GroqConfig
+import com.example.watsapporderservices.data.security.OpenCodeConfig
 import com.example.watsapporderservices.data.security.JwtConfig
 import com.example.watsapporderservices.data.security.PasswordHasher
 import com.example.watsapporderservices.data.security.PushConfig
@@ -92,9 +92,9 @@ fun Application.module() {
     )
     val authUseCase = AuthUseCase(authRepository)
     val whatsAppConfig = WhatsAppConfig.from(environment.config, System.getenv())
-    val groqConfig = GroqConfig.from(environment.config, System.getenv())
-    if (!groqConfig.isConfigured) {
-        log.warn("TOKEN_GROK is not set: the WhatsApp auto-reply will not work")
+    val openCodeConfig = OpenCodeConfig.from(environment.config, System.getenv())
+    if (!openCodeConfig.isConfigured) {
+        log.warn("OPENCODE_API_KEY is not set: the WhatsApp order agent will not work")
     }
     val messageRepository = MessageRepositoryImpl(whatsAppConfig)
     val storeRepository = StoreRepositoryImpl(storeDao, userDao)
@@ -116,7 +116,7 @@ fun Application.module() {
     }
     val notificationRepository = NotificationRepositoryImpl(deviceTokenDao, messagingClient)
     val orderAgentRepository = OrderAgentRepositoryImpl(
-        aiRepository = AiRepositoryImpl(groqConfig),
+        aiRepository = AiRepositoryImpl(openCodeConfig),
         messageRepository = messageRepository,
         productRepository = productRepository,
         orderRepository = orderRepository,

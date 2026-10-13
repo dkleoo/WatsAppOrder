@@ -124,8 +124,9 @@ Orden típico al añadir un módulo:
 
 ## Agente tomador de pedidos (WhatsApp)
 
-El webhook delega en `OrderAgentRepositoryImpl`, que conversa con el cliente usando **tool calling** de Groq y
-consulta la base **directo** vía repositorios (sin endpoints HTTP). Reemplaza a la antigua máquina de estados.
+El webhook delega en `OrderAgentRepositoryImpl`, que conversa con el cliente usando **tool calling** de
+OpenCode Zen (`OPENCODE_API_KEY`) y consulta la base **directo** vía repositorios (sin endpoints HTTP).
+Reemplaza a la antigua máquina de estados.
 
 - Persona / system prompt: `server/src/main/resources/prompts/order-agent.md` (se carga con `PromptLoader`).
 - Historial por cliente: tabla `session_messages` (últimos 20 mensajes al modelo); la sesión expira a los 30 min.

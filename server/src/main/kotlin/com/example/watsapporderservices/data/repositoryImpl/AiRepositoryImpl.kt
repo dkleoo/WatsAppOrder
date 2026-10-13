@@ -1,13 +1,13 @@
 package com.example.watsapporderservices.data.repositoryImpl
 
-import com.example.watsapporderservices.data.mapper.GroqChatRequest
-import com.example.watsapporderservices.data.mapper.GroqChatResponse
-import com.example.watsapporderservices.data.mapper.GroqFunctionCall
-import com.example.watsapporderservices.data.mapper.GroqMessage
-import com.example.watsapporderservices.data.mapper.GroqTool
-import com.example.watsapporderservices.data.mapper.GroqToolCall
-import com.example.watsapporderservices.data.mapper.GroqToolFunction
-import com.example.watsapporderservices.data.security.GroqConfig
+import com.example.watsapporderservices.data.mapper.ChatCompletionRequest
+import com.example.watsapporderservices.data.mapper.ChatCompletionResponse
+import com.example.watsapporderservices.data.mapper.ChatFunctionCallDto
+import com.example.watsapporderservices.data.mapper.ChatMessageDto
+import com.example.watsapporderservices.data.mapper.ChatToolCallDto
+import com.example.watsapporderservices.data.mapper.ChatToolDto
+import com.example.watsapporderservices.data.mapper.ChatToolFunctionDto
+import com.example.watsapporderservices.data.security.OpenCodeConfig
 import com.example.watsapporderservices.domain.repository.AiRepository
 import com.example.watsapporderservices.domain.usecase.AiChatResult
 import com.example.watsapporderservices.domain.usecase.AiMessage
@@ -22,14 +22,16 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
 
-private const val CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 private const val REQUEST_TIMEOUT_SECONDS = 60L
 private const val ERROR_BODY_SNIPPET = 300
-private const val REASONING_MODEL_MARKER = "gpt-oss"
 private const val TOOL_CHOICE_AUTO = "auto"
 
+/**
+ * OpenCode Zen client (OpenAI-compatible chat completions). Sends the conversation plus the tool
+ * definitions and returns either the assistant text or the tool calls to execute.
+ */
 class AiRepositoryImpl(
-    private val config: GroqConfig,
+    private val config: OpenCodeConfig,
 ) : AiRepository {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -43,7 +45,7 @@ class AiRepositoryImpl(
     override suspend fun chat(messages: List<AiMessage>, tools: List<AiTool>): AiChatResult {
         if (!config.isConfigured) return AiChatResult.NotConfigured
 
-        return when (val result = send(messages.map { it.toGroq() }, tools)) {
+        return when (val result = send(messages.map { it.toChat() }, tools)) {
             is SendResult.Ok -> {
                 if (result.toolCalls.isNotEmpty()) {
                     AiChatResult.ToolCalls(result.toolCalls)
@@ -61,21 +63,19 @@ class AiRepositoryImpl(
         }
     }
 
-    private suspend fun send(messages: List<GroqMessage>, tools: List<AiTool>?): SendResult {
+    private suspend fun send(messages: List<ChatMessageDto>, tools: List<AiTool>?): SendResult {
         val body = json.encodeToString(
-            GroqChatRequest.serializer(),
-            GroqChatRequest(
+            ChatCompletionRequest.serializer(),
+            ChatCompletionRequest(
                 model = config.model,
                 messages = messages,
                 temperature = config.temperature,
-                maxCompletionTokens = config.maxCompletionTokens,
                 topP = config.topP,
-                reasoningEffort = config.reasoningEffort.takeIf { config.model.contains(REASONING_MODEL_MARKER) },
-                tools = tools?.takeIf { it.isNotEmpty() }?.map { it.toGroq() },
+                tools = tools?.takeIf { it.isNotEmpty() }?.map { it.toChat() },
                 toolChoice = TOOL_CHOICE_AUTO.takeIf { !tools.isNullOrEmpty() },
             ),
         )
-        val httpRequest = HttpRequest.newBuilder(URI.create(CHAT_COMPLETIONS_URL))
+        val httpRequest = HttpRequest.newBuilder(URI.create(config.baseUrl))
             .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
             .header("Authorization", "Bearer ${config.apiKey}")
             .header("Content-Type", "application/json")
@@ -93,8 +93,8 @@ class AiRepositoryImpl(
         }
 
         val choice = runCatching {
-            json.decodeFromString(GroqChatResponse.serializer(), response.body()).choices?.firstOrNull()
-        }.getOrNull() ?: return SendResult.Error("Malformed response from Groq")
+            json.decodeFromString(ChatCompletionResponse.serializer(), response.body()).choices?.firstOrNull()
+        }.getOrNull() ?: return SendResult.Error("Malformed response from OpenCode")
 
         val message = choice.message
         val calls = message?.toolCalls.orEmpty().map { AiToolCall(it.id, it.function.name, it.function.arguments) }
@@ -102,16 +102,16 @@ class AiRepositoryImpl(
     }
 }
 
-private fun AiMessage.toGroq(): GroqMessage = GroqMessage(
+private fun AiMessage.toChat(): ChatMessageDto = ChatMessageDto(
     role = role,
     content = content,
     toolCalls = toolCalls.takeIf { it.isNotEmpty() }
-        ?.map { GroqToolCall(id = it.id, function = GroqFunctionCall(it.name, it.arguments)) },
+        ?.map { ChatToolCallDto(id = it.id, function = ChatFunctionCallDto(it.name, it.arguments)) },
     toolCallId = toolCallId,
 )
 
-private fun AiTool.toGroq(): GroqTool = GroqTool(
-    function = GroqToolFunction(name = name, description = description, parameters = parameters),
+private fun AiTool.toChat(): ChatToolDto = ChatToolDto(
+    function = ChatToolFunctionDto(name = name, description = description, parameters = parameters),
 )
 
 private sealed interface SendResult {

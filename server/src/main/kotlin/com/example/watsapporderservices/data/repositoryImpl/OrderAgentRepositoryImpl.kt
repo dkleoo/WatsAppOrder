@@ -110,12 +110,12 @@ class OrderAgentRepositoryImpl(
                 }
 
                 AiChatResult.NotConfigured -> {
-                    logger.warn("Groq is not configured (TOKEN_GROK missing): answering with the fallback")
+                    logger.warn("OpenCode is not configured (OPENCODE_API_KEY missing): answering with the fallback")
                     return NOT_CONFIGURED_REPLY
                 }
 
                 is AiChatResult.Failed -> {
-                    logger.warn("Groq chat failed: {}", step.detail)
+                    logger.warn("OpenCode chat failed: {}", step.detail)
                     return FALLBACK_REPLY
                 }
             }

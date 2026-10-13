@@ -5,66 +5,64 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
-internal data class GroqChatRequest(
+internal data class ChatCompletionRequest(
     val model: String,
-    val messages: List<GroqMessage>,
+    val messages: List<ChatMessageDto>,
     val temperature: Double,
-    @SerialName("max_completion_tokens") val maxCompletionTokens: Int,
     @SerialName("top_p") val topP: Double,
-    @SerialName("reasoning_effort") val reasoningEffort: String? = null,
-    val tools: List<GroqTool>? = null,
+    val tools: List<ChatToolDto>? = null,
     @SerialName("tool_choice") val toolChoice: String? = null,
     val stream: Boolean = false,
 )
 
 @Serializable
-internal data class GroqMessage(
+internal data class ChatMessageDto(
     val role: String,
     val content: String? = null,
-    @SerialName("tool_calls") val toolCalls: List<GroqToolCall>? = null,
+    @SerialName("tool_calls") val toolCalls: List<ChatToolCallDto>? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
 )
 
 @Serializable
-internal data class GroqTool(
+internal data class ChatToolDto(
     val type: String = "function",
-    val function: GroqToolFunction,
+    val function: ChatToolFunctionDto,
 )
 
 @Serializable
-internal data class GroqToolFunction(
+internal data class ChatToolFunctionDto(
     val name: String,
     val description: String,
     val parameters: JsonObject,
 )
 
 @Serializable
-internal data class GroqToolCall(
+internal data class ChatToolCallDto(
     val id: String,
     val type: String = "function",
-    val function: GroqFunctionCall,
+    val function: ChatFunctionCallDto,
 )
 
 @Serializable
-internal data class GroqFunctionCall(
+internal data class ChatFunctionCallDto(
     val name: String,
     val arguments: String,
 )
 
 @Serializable
-internal data class GroqChatResponse(
-    val choices: List<GroqChoice>? = null,
+internal data class ChatCompletionResponse(
+    val choices: List<ChatChoiceDto>? = null,
 )
 
 @Serializable
-internal data class GroqChoice(
+internal data class ChatChoiceDto(
     @SerialName("finish_reason") val finishReason: String? = null,
-    val message: GroqResponseMessage? = null,
+    val message: ChatResponseMessageDto? = null,
 )
 
 @Serializable
-internal data class GroqResponseMessage(
+internal data class ChatResponseMessageDto(
     val role: String? = null,
     val content: String? = null,
-    @SerialName("tool_calls") val toolCalls: List<GroqToolCall>? = null,
+    @SerialName("tool_calls") val toolCalls: List<ChatToolCallDto>? = null,
 )

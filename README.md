@@ -103,15 +103,15 @@ Success (`200`):
 Errors: `400` for invalid `extension`/`number`/`message`, `503` when the access token or phone number id is not
 configured, `502` when the Graph API rejects the request (the response includes a `detail` field).
 
-### Order-taking agent (Groq + tools)
+### Order-taking agent (OpenCode Zen + tools)
 
 Incoming WhatsApp messages are handled by an **LLM agent with tool calling** instead of a scripted state machine.
 The agent queries the database **directly** through in-process tools (no HTTP round-trips) and only asks the
 customer what it actually needs.
 
-- API key from `TOKEN_GROK` (or `GROQ_API_KEY`). Default model `openai/gpt-oss-120b` (override with
-  `GROQ_MODEL`). `reasoning_effort` is only sent for `gpt-oss` models. Note: Groq rotates models; check
-  `GET https://api.groq.com/openai/v1/models` if a model stops working.
+- API key from `OPENCODE_API_KEY` (OpenCode Zen, OpenAI-compatible gateway). Default model
+  `deepseek-v4.1-flash` (override with `OPENCODE_MODEL`; base URL with `OPENCODE_BASE_URL`). Model list:
+  `GET https://opencode.ai/inference/v1/models`.
 - Tools (all read/write the DB through repositories): `buscar_productos`, `ver_producto`,
   `agregar_producto(productoId, cantidad, opciones)`, `quitar_producto`, `ver_pedido`, `info_tienda`,
   `confirmar_pedido(tipo, nombre, direccion, pago)`.
@@ -273,7 +273,8 @@ their next product creations go to that store. The login/`/auth/me` response inc
 | `WHATSAPP_ACCESS_TOKEN`  | - (required for `POST /messages`; alias `WHATAPP_PERMANT`) |
 | `WHATSAPP_BUSINESS_ACCOUNT_ID` | `1415775780434889` (WhatsApp Business Account id) |
 | `WHATSAPP_PHONE_NUMBER_ID` | `1379699841884103` (sender phone number id)  |
-| `TOKEN_GROK`             | - (required for the WhatsApp AI auto-reply)    |
+| `OPENCODE_API_KEY`       | - (required for the WhatsApp order agent)      |
+| `OPENCODE_MODEL`         | `deepseek-v4.1-flash`                          |
 | `HOST` / `PORT`          | from `application.conf` (`ktor.deployment`)    |
 
 Database credentials are read **only** from environment variables; `application.conf` no longer contains a URL, user, or password.
